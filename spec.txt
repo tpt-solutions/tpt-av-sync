@@ -1,0 +1,840 @@
+# tpt-av-sync
+
+**A pure-Rust, CRDT-based real-time collaboration engine for media timelines. Multi-user editing, playhead synchronization, and conflict-free state replication. The collaboration layer of the TPT AV stack.**
+
+**License:** MIT  
+**Status:** Early-stage / Pre-1.0  
+**Ecosystem:** [TPT Solutions Open Source](https://opensource.tptsolutions.co.nz/)
+
+---
+
+## 1. Vision & Philosophy
+
+`tpt-av-sync` is the **real-time collaboration layer** of the TPT AV Stack. It enables multiple users to edit the same audio or video timeline simultaneously, with automatic conflict resolution and real-time synchronization of edits, playhead positions, and parameter changes.
+
+The current landscape of collaborative media editing is limited:
+- **Proprietary solutions:** Frame.io, Descript, and a few cloud-based tools offer basic collaboration, but they are closed-source and expensive.
+- **Legacy DAWs:** Pro Tools, Logic, and Ableton have no real-time collaboration. They rely on file-based workflows (send project → receive project).
+- **General CRDTs:** Libraries like `automerge` and `y-crdt` provide generic conflict-free data structures, but they are not optimized for media timelines with complex spatial-temporal relationships.
+
+`tpt-av-sync` fills this gap by providing:
+1. **Media-specific CRDTs** — conflict-free data structures designed for timeline operations (clip insert, move, delete, split, trim)
+2. **Real-time playhead synchronization** — sub-millisecond precision across network connections
+3. **Operational transforms** — handle concurrent edits from multiple users without conflicts
+4. **Peer-to-peer architecture** — WebRTC data channels for low-latency, serverless collaboration
+5. **Offline-first design** — edits work offline and sync when reconnected
+6. **Pure MIT licensing** — zero copyleft contamination
+
+### Core Tenets
+
+1. **Conflict-Free by Design:** All timeline operations are commutative and idempotent. No matter what order operations arrive, the final state is identical across all peers.
+2. **Real-Time Safe:** Playhead synchronization and parameter updates are allocation-free and lock-free. Safe to call from audio/render threads.
+3. **Offline-First:** All edits are stored locally and synced when network is available. No data loss during disconnections.
+4. **Pure Rust, Zero External Sync Dependencies:** No C/C++ bindings. CRDT implementation is pure Rust.
+5. **Peer-to-Peer Architecture:** Uses WebRTC data channels for direct peer-to-peer communication. No central server required (but server-based relay is supported).
+6. **Pure MIT Licensing:** No GPL/LGPL/MPL dependencies. Enforced via `cargo-deny` in CI.
+7. **Composable Architecture:** Each sub-crate is independently useful. A developer can use just the CRDT engine, just the network layer, or just the playhead sync.
+
+---
+
+## 2. Ecosystem Integration
+
+`tpt-av-sync` sits in the **Collaboration Layer** of the TPT AV Stack, working alongside `tpt-audio` and `tpt-visual` to enable multi-user editing.
+
+| Crate | Role | Relationship to `tpt-av-sync` |
+| :--- | :--- | :--- |
+| **`tpt-audio`** | Audio timeline, processing | `tpt-av-sync` replicates audio timeline state across peers. |
+| **`tpt-visual`** | Video timeline, compositing | `tpt-av-sync` replicates video timeline state across peers. |
+| **`tpt-av-sync`** | **Collaboration (this repo)** | CRDT engine, network sync, playhead synchronization. |
+| **External Peers** | Other users' applications | Send/receive timeline operations via WebRTC/WebSockets. |
+
+### Data Flow
+User A makes edit (e.g., moves clip)
+↓
+tpt-av-sync-crdt creates operation (ClipMove { clip_id, new_position })
+↓
+tpt-av-sync-net sends operation to peers (WebRTC data channel)
+↓
+User B receives operation
+↓
+tpt-av-sync-crdt applies operation to local timeline
+↓
+tpt-audio / tpt-visual updates UI
+
+
+---
+
+## 3. Repository Architecture (Cargo Workspace)
+
+All sub-crates share the `tpt-av-sync-` prefix for ecosystem coherence and clean namespace resolution on crates.io.
+
+```text
+tpt-av-sync/                        # GitHub Repository / Workspace Root
+├── Cargo.toml                      # Workspace manifest
+├── deny.toml                       # cargo-deny license audit config
+├── LICENSE-MIT
+├── README.md
+├── DESIGN.md                       # This file
+│
+├── tpt-av-sync-utils/              # Shared types, error handling
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── peer_id.rs              # Unique peer identifiers
+│   │   ├── operation_id.rs         # Unique operation identifiers (Lamport timestamps)
+│   │   ├── clock.rs                # Logical clocks (Lamport, Vector Clock)
+│   │   ├── time.rs                 # Network time synchronization types
+│   │   └── error.rs                # `SyncError` enum
+│   └── Cargo.toml
+│
+├── tpt-av-sync-crdt/               # CRDT engine for media timelines
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── operation.rs            # Timeline operations (Insert, Move, Delete, Split, Trim)
+│   │   ├── timeline_crdt.rs        # CRDT data structure for timeline state
+│   │   ├── clip_crdt.rs            # CRDT for individual clips
+│   │   ├── track_crdt.rs           # CRDT for tracks
+│   │   ├── envelope_crdt.rs        # CRDT for automation envelopes
+│   │   ├── merge.rs                # Conflict resolution and merging
+│   │   ├── history.rs              # Operation history and undo/redo
+│   │   └── state.rs                # Current timeline state
+│   ├── Cargo.toml
+│   └── tests/
+│
+├── tpt-av-sync-net/                # Network transport layer
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── transport.rs            # Transport trait (WebRTC, WebSocket, TCP)
+│   │   ├── webrtc.rs               # WebRTC data channel implementation
+│   │   ├── websocket.rs            # WebSocket implementation (server-based)
+│   │   ├── tcp.rs                  # Raw TCP implementation (LAN)
+│   │   ├── message.rs              # Network message types
+│   │   ├── peer.rs                 # Peer management
+│   │   ├── discovery.rs            # Peer discovery (mDNS, broadcast)
+│   │   └── reliability.rs          # Message ordering and reliability
+│   ├── Cargo.toml
+│   └── tests/
+│
+├── tpt-av-sync-playhead/           # Playhead synchronization
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── sync.rs                 # Playhead sync algorithm
+│   │   ├── clock.rs                # Network clock synchronization (NTP-like)
+│   │   ├── drift.rs                # Clock drift compensation
+│   │   ├── latency.rs              # Latency estimation and compensation
+│   │   └── transport.rs            # Transport control sync (play, stop, record)
+│   ├── Cargo.toml
+│   └── tests/
+│
+├── tpt-av-sync-presence/           # User presence and awareness
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── presence.rs             # User presence (online, idle, offline)
+│   │   ├── cursor.rs               # Remote user cursors (selection, playhead)
+│   │   ├── avatar.rs               # User avatars and metadata
+│   │   └── activity.rs             # User activity indicators
+│   ├── Cargo.toml
+│   └── tests/
+│
+├── tpt-av-sync-server/             # Optional relay server (future)
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── relay.rs                # Message relay for peers behind NAT
+│   │   ├── signaling.rs            # WebRTC signaling server
+│   │   └── persistence.rs          # Session persistence
+│   ├── Cargo.toml
+│   └── tests/
+│
+└── examples/                       # Demos and integration tests
+    ├── collaborative_editor.rs     # Two peers editing the same timeline
+    ├── playhead_sync.rs            # Synchronized playback across peers
+    ├── presence_demo.rs            # Remote user cursors and presence
+    └── offline_sync.rs             # Offline editing with later sync
+
+4. Core API Design
+4.1. CRDT Operations (tpt-av-sync-crdt)
+
+/// A timeline operation that can be replicated across peers.
+///
+/// All operations are commutative and idempotent.
+/// No matter what order they arrive, the final state is identical.
+#[derive(Debug, Clone)]
+pub enum TimelineOperation {
+    /// Insert a new clip into a track.
+    InsertClip {
+        /// Unique clip ID (generated by the peer creating the clip).
+        clip_id: ClipId,
+        /// Target track ID.
+        track_id: TrackId,
+        /// Clip data.
+        clip: ClipData,
+        /// Position in the track (index).
+        position: usize,
+    },
+    
+    /// Move a clip to a new position.
+    MoveClip {
+        /// Clip ID.
+        clip_id: ClipId,
+        /// New track ID (can be same track).
+        new_track_id: TrackId,
+        /// New start time (in frames/samples).
+        new_start_frame: u64,
+        /// New position in the track.
+        new_position: usize,
+    },
+    
+    /// Delete a clip.
+    DeleteClip {
+        /// Clip ID.
+        clip_id: ClipId,
+    },
+    
+    /// Split a clip at a specific time.
+    SplitClip {
+        /// Original clip ID.
+        clip_id: ClipId,
+        /// Split time (in frames/samples, relative to clip start).
+        split_frame: u64,
+        /// ID for the new clip (right half).
+        new_clip_id: ClipId,
+    },
+    
+    /// Trim a clip (change duration).
+    TrimClip {
+        /// Clip ID.
+        clip_id: ClipId,
+        /// New duration (in frames/samples).
+        new_duration: u64,
+        /// Which edge is being trimmed.
+        edge: TrimEdge,
+    },
+    
+    /// Update clip metadata (name, color, etc.).
+    UpdateClipMetadata {
+        /// Clip ID.
+        clip_id: ClipId,
+        /// Metadata updates.
+        updates: ClipMetadataUpdate,
+    },
+    
+    /// Insert a new track.
+    InsertTrack {
+        /// Track ID.
+        track_id: TrackId,
+        /// Track data.
+        track: TrackData,
+        /// Position in the session.
+        position: usize,
+    },
+    
+    /// Delete a track.
+    DeleteTrack {
+        /// Track ID.
+        track_id: TrackId,
+    },
+    
+    /// Update an automation envelope.
+    UpdateEnvelope {
+        /// Clip ID (or track ID for track-level envelope).
+        target_id: TargetId,
+        /// Envelope type (volume, pan, custom).
+        envelope_type: EnvelopeType,
+        /// Envelope points.
+        points: Vec<EnvelopePoint>,
+    },
+    
+    /// Update session metadata (name, sample rate, etc.).
+    UpdateSessionMetadata {
+        /// Metadata updates.
+        updates: SessionMetadataUpdate,
+    },
+}
+
+/// An operation with metadata for ordering and conflict resolution.
+#[derive(Debug, Clone)]
+pub struct TaggedOperation {
+    /// Unique operation ID (Lamport timestamp + peer ID).
+    pub op_id: OperationId,
+    /// The operation itself.
+    pub operation: TimelineOperation,
+    /// Lamport timestamp for causal ordering.
+    pub lamport_ts: u64,
+    /// Vector clock at the time of the operation.
+    pub vector_clock: VectorClock,
+    /// Peer ID of the creator.
+    pub peer_id: PeerId,
+    /// Timestamp (wall clock, for display only).
+    pub timestamp: SystemTime,
+}
+
+/// The CRDT timeline state.
+///
+/// This is the core data structure that maintains a conflict-free
+/// representation of the timeline across all peers.
+pub struct TimelineCrdt {
+    /// Current session state.
+    session: Session,
+    /// Operation log (for undo/redo and replication).
+    operation_log: Vec<TaggedOperation>,
+    /// Vector clock (tracks causality).
+    vector_clock: VectorClock,
+    /// Peer ID of the local user.
+    local_peer_id: PeerId,
+}
+
+impl TimelineCrdt {
+    /// Creates a new empty timeline CRDT.
+    pub fn new(local_peer_id: PeerId) -> Self;
+
+    /// Applies a local operation (from the current user).
+    ///
+    /// Returns the tagged operation to be sent to peers.
+    pub fn apply_local(&mut self, operation: TimelineOperation) -> TaggedOperation {
+        // 1. Increment Lamport timestamp
+        // 2. Update vector clock
+        // 3. Apply operation to session state
+        // 4. Add to operation log
+        // 5. Return tagged operation
+        todo!()
+    }
+
+    /// Applies a remote operation (from another peer).
+    ///
+    /// Handles conflict resolution and causal ordering.
+    pub fn apply_remote(&mut self, tagged_op: TaggedOperation) -> Result<(), SyncError> {
+        // 1. Check if operation is already applied (idempotency)
+        // 2. Update vector clock
+        // 3. Apply operation to session state
+        // 4. Add to operation log
+        todo!()
+    }
+
+    /// Returns the current session state.
+    pub fn session(&self) -> &Session;
+
+    /// Returns the operation log (for persistence or replication).
+    pub fn operation_log(&self) -> &[TaggedOperation];
+
+    /// Generates a snapshot of the current state (for new peers joining).
+    pub fn snapshot(&self) -> TimelineSnapshot;
+
+    /// Restores state from a snapshot.
+    pub fn from_snapshot(snapshot: TimelineSnapshot, local_peer_id: PeerId) -> Self;
+}
+
+4.2. Network Transport (tpt-av-sync-net)
+
+/// Network transport trait.
+pub trait Transport: Send + Sync {
+    /// Sends a message to a specific peer.
+    fn send_to(&mut self, peer_id: PeerId, message: SyncMessage) -> Result<(), SyncError>;
+
+    /// Broadcasts a message to all peers.
+    fn broadcast(&mut self, message: SyncMessage) -> Result<(), SyncError>;
+
+    /// Receives the next message (blocking).
+    fn recv(&mut self) -> Result<(PeerId, SyncMessage), SyncError>;
+
+    /// Receives the next message (non-blocking).
+    fn try_recv(&mut self) -> Result<Option<(PeerId, SyncMessage)>, SyncError>;
+
+    /// Returns the list of connected peers.
+    fn peers(&self) -> Vec<PeerId>;
+}
+
+/// Network messages.
+#[derive(Debug, Clone)]
+pub enum SyncMessage {
+    /// A timeline operation.
+    Operation(TaggedOperation),
+    /// A request for the current state snapshot.
+    RequestSnapshot,
+    /// A state snapshot (sent to new peers).
+    Snapshot(TimelineSnapshot),
+    /// Playhead position update.
+    PlayheadUpdate(PlayheadUpdate),
+    /// Transport control (play, stop, record).
+    TransportControl(TransportControl),
+    /// Presence update (user joined, left, cursor position).
+    PresenceUpdate(PresenceUpdate),
+    /// Clock synchronization message.
+    ClockSync(ClockSyncMessage),
+    /// Acknowledgment of received operation.
+    Ack(OperationId),
+}
+
+/// WebRTC data channel transport.
+pub struct WebRtcTransport {
+    /// WebRTC peer connection.
+    peer_connection: RTCPeerConnection,
+    /// Data channel for sync messages.
+    data_channel: RTCDataChannel,
+    /// Connected peers.
+    peers: HashMap<PeerId, RTCDataChannel>,
+}
+
+impl Transport for WebRtcTransport {
+    fn send_to(&mut self, peer_id: PeerId, message: SyncMessage) -> Result<(), SyncError> {
+        // Serialize message and send via data channel
+        todo!()
+    }
+
+    fn broadcast(&mut self, message: SyncMessage) -> Result<(), SyncError> {
+        // Send to all connected peers
+        todo!()
+    }
+
+    fn recv(&mut self) -> Result<(PeerId, SyncMessage), SyncError> {
+        // Receive from data channel
+        todo!()
+    }
+
+    fn try_recv(&mut self) -> Result<Option<(PeerId, SyncMessage)>, SyncError> {
+        // Non-blocking receive
+        todo!()
+    }
+
+    fn peers(&self) -> Vec<PeerId> {
+        self.peers.keys().cloned().collect()
+    }
+}
+
+/// The sync engine that manages replication across peers.
+pub struct SyncEngine {
+    /// Local CRDT state.
+    crdt: TimelineCrdt,
+    /// Network transport.
+    transport: Box<dyn Transport>,
+    /// Pending operations (not yet acknowledged).
+    pending_ops: HashMap<OperationId, TaggedOperation>,
+    /// Peer states.
+    peer_states: HashMap<PeerId, PeerState>,
+}
+
+impl SyncEngine {
+    /// Creates a new sync engine.
+    pub fn new(
+        crdt: TimelineCrdt,
+        transport: Box<dyn Transport>,
+    ) -> Self;
+
+    /// Applies a local operation and broadcasts to peers.
+    pub fn apply_local(&mut self, operation: TimelineOperation) -> Result<(), SyncError> {
+        // 1. Apply to local CRDT
+        // 2. Broadcast to peers
+        // 3. Add to pending operations
+        todo!()
+    }
+
+    /// Processes incoming messages from peers.
+    pub fn process_messages(&mut self) -> Result<(), SyncError> {
+        // 1. Receive messages from transport
+        // 2. For each message:
+        //    - If Operation: apply to CRDT, send ack
+        //    - If Ack: remove from pending
+        //    - If Snapshot: restore state
+        //    - If PlayheadUpdate: update remote playhead
+        //    - If PresenceUpdate: update peer presence
+        todo!()
+    }
+
+    /// Handles a new peer joining.
+    pub fn handle_peer_join(&mut self, peer_id: PeerId) -> Result<(), SyncError> {
+        // Send state snapshot to new peer
+        todo!()
+    }
+
+    /// Handles a peer leaving.
+    pub fn handle_peer_leave(&mut self, peer_id: PeerId) -> Result<(), SyncError>;
+}
+
+4.3. Playhead Synchronization (tpt-av-sync-playhead)
+
+/// Playhead synchronization engine.
+///
+/// Ensures that all peers have synchronized playhead positions
+/// with sub-millisecond precision, accounting for network latency
+/// and clock drift.
+pub struct PlayheadSync {
+    /// Local playhead position (in frames/samples).
+    local_position: u64,
+    /// Remote playhead positions.
+    remote_positions: HashMap<PeerId, u64>,
+    /// Network clock offset (local vs. master clock).
+    clock_offset_ms: f64,
+    /// Estimated network latency (round-trip time).
+    latency_ms: f64,
+    /// Whether we are the master clock.
+    is_master: bool,
+    /// Sample rate (for frame ↔ time conversion).
+    sample_rate: u32,
+}
+
+impl PlayheadSync {
+    /// Creates a new playhead sync engine.
+    pub fn new(sample_rate: u32) -> Self;
+
+    /// Updates the local playhead position.
+    pub fn set_local_position(&mut self, position: u64);
+
+    /// Receives a playhead update from a peer.
+    pub fn receive_playhead_update(&mut self, peer_id: PeerId, position: u64, timestamp: u64);
+
+    /// Returns the synchronized playhead position (adjusted for latency).
+    pub fn synchronized_position(&self) -> u64 {
+        // If we are the master, return local position.
+        // Otherwise, return the master's position adjusted for latency.
+        todo!()
+    }
+
+    /// Generates a playhead update message to send to peers.
+    pub fn generate_update(&self) -> PlayheadUpdate;
+
+    /// Processes clock synchronization messages.
+    pub fn process_clock_sync(&mut self, message: ClockSyncMessage);
+}
+
+/// A playhead position update.
+#[derive(Debug, Clone)]
+pub struct PlayheadUpdate {
+    /// Peer ID.
+    pub peer_id: PeerId,
+    /// Playhead position (in frames/samples).
+    pub position: u64,
+    /// Timestamp (when this position was captured).
+    pub timestamp: u64,
+    /// Whether the peer is playing.
+    pub playing: bool,
+}
+
+/// A clock synchronization message (NTP-like algorithm).
+#[derive(Debug, Clone)]
+pub struct ClockSyncMessage {
+    /// Sender peer ID.
+    pub peer_id: PeerId,
+    /// Message type (request or response).
+    pub message_type: ClockSyncType,
+    /// Timestamp T1 (sender's send time).
+    pub t1: u64,
+    /// Timestamp T2 (receiver's receive time, for responses).
+    pub t2: Option<u64>,
+    /// Timestamp T3 (receiver's send time, for responses).
+    pub t3: Option<u64>,
+    /// Timestamp T4 (sender's receive time, for responses).
+    pub t4: Option<u64>,
+}
+
+4.4. Presence and Awareness (tpt-av-sync-presence)
+
+/// User presence and awareness system.
+pub struct PresenceManager {
+    /// Local user info.
+    local_user: UserInfo,
+    /// Remote users.
+    remote_users: HashMap<PeerId, UserInfo>,
+    /// Remote cursors (selection, playhead).
+    remote_cursors: HashMap<PeerId, CursorState>,
+}
+
+/// User information.
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    /// Peer ID.
+    pub peer_id: PeerId,
+    /// Display name.
+    pub name: String,
+    /// Avatar URL or data.
+    pub avatar: Option<AvatarData>,
+    /// Color (for UI highlighting).
+    pub color: Color,
+    /// Presence state.
+    pub presence: PresenceState,
+    /// Last activity timestamp.
+    pub last_active: SystemTime,
+}
+
+/// Presence states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresenceState {
+    /// User is online and active.
+    Online,
+    /// User is online but idle (no activity for N seconds).
+    Idle,
+    /// User is offline.
+    Offline,
+}
+
+/// Cursor state (what the user is looking at or selecting).
+#[derive(Debug, Clone)]
+pub struct CursorState {
+    /// Playhead position (if visible).
+    pub playhead: Option<u64>,
+    /// Selection range (if any).
+    pub selection: Option<(u64, u64)>,
+    /// Clip being hovered or edited.
+    pub focused_clip: Option<ClipId>,
+    /// Timestamp.
+    pub timestamp: SystemTime,
+}
+
+impl PresenceManager {
+    /// Creates a new presence manager.
+    pub fn new(local_user: UserInfo) -> Self;
+
+    /// Updates the local user's cursor state.
+    pub fn update_local_cursor(&mut self, cursor: CursorState);
+
+    /// Receives a presence update from a peer.
+    pub fn receive_update(&mut self, peer_id: PeerId, update: PresenceUpdate);
+
+    /// Returns all remote users.
+    pub fn remote_users(&self) -> Vec<&UserInfo>;
+
+    /// Returns all remote cursors.
+    pub fn remote_cursors(&self) -> Vec<(&PeerId, &CursorState)>;
+
+    /// Generates a presence update to send to peers.
+    pub fn generate_update(&self) -> PresenceUpdate;
+}
+
+5. Conflict Resolution Strategy
+5.1. Commutative Operations
+All timeline operations are designed to be commutative (order doesn't matter) and idempotent (applying the same operation twice has no additional effect).
+Example: Concurrent Clip Moves
+
+User A moves Clip X to position 100
+User B moves Clip X to position 200
+
+Both operations arrive at User C.
+
+Resolution: Last-writer-wins based on Lamport timestamp.
+If A's operation has higher timestamp, final position = 100.
+If B's operation has higher timestamp, final position = 200.
+
+Example: Concurrent Clip Deletes
+
+User A deletes Clip X
+User B deletes Clip X
+
+Both operations arrive at User C.
+
+Resolution: Idempotent. Clip X is deleted once.
+
+Example: Concurrent Clip Splits
+
+User A splits Clip X at frame 500
+User B splits Clip X at frame 1000
+
+Both operations arrive at User C.
+
+Resolution: Both splits are applied. Clip X becomes three clips:
+- Original (0-500)
+- Middle (500-1000)
+- Right (1000-end)
+
+5.2. Vector Clocks for Causal Ordering
+Vector clocks track causality between operations:
+
+/// A vector clock for tracking causal relationships.
+#[derive(Debug, Clone)]
+pub struct VectorClock {
+    /// Clock values for each peer.
+    clocks: HashMap<PeerId, u64>,
+}
+
+impl VectorClock {
+    /// Increments the clock for a specific peer.
+    pub fn increment(&mut self, peer_id: PeerId);
+
+    /// Merges another vector clock (takes max for each peer).
+    pub fn merge(&mut self, other: &VectorClock);
+
+    /// Returns true if this clock is causally before another.
+    pub fn happens_before(&self, other: &VectorClock) -> bool;
+
+    /// Returns true if this clock is concurrent with another.
+    pub fn is_concurrent(&self, other: &VectorClock) -> bool;
+}
+
+6. Network Architecture
+6.1. Peer-to-Peer with WebRTC
+
+User A (Browser/Desktop App)
+        ↓ WebRTC Data Channel
+User B (Browser/Desktop App)
+        ↓ WebRTC Data Channel
+User C (Browser/Desktop App)
+
+All peers are directly connected.
+No central server required.
+
+6.2. Signaling Server (Optional)
+For peers behind NAT or firewalls, a signaling server helps establish WebRTC connections:
+
+User A → Signaling Server → User B
+         (exchange SDP offers/answers)
+         (exchange ICE candidates)
+
+After connection established:
+User A ←→ User B (direct peer-to-peer)
+
+6.3. Relay Server (Fallback)
+If peer-to-peer fails, messages can be relayed through a server:
+
+User A → Relay Server → User B
+
+7. Performance Considerations
+7.1. Message Batching
+To reduce network overhead, operations are batched:
+
+/// Batches operations and sends them at regular intervals.
+pub struct OperationBatcher {
+    /// Pending operations.
+    pending: Vec<TaggedOperation>,
+    /// Batch interval (e.g., 16ms for 60fps).
+    batch_interval_ms: u64,
+    /// Last send time.
+    last_send: Instant,
+}
+
+impl OperationBatcher {
+    /// Adds an operation to the batch.
+    pub fn add(&mut self, op: TaggedOperation);
+
+    /// Sends the batch if the interval has elapsed.
+    pub fn flush_if_ready(&mut self, transport: &mut dyn Transport);
+}
+
+7.2. Delta Compression
+For large state snapshots, only send the differences:
+
+/// Computes the difference between two timeline states.
+pub fn compute_delta(old: &Session, new: &Session) -> Vec<TimelineOperation>;
+
+/// Applies a delta to a timeline state.
+pub fn apply_delta(session: &mut Session, delta: &[TimelineOperation]);
+
+8. Roadmap
+Phase 1: Foundation & CRDT Core (Current)
+tpt-av-sync-utils with shared types (PeerId, OperationId, VectorClock)
+tpt-av-sync-crdt with basic timeline operations (Insert, Move, Delete)
+Conflict resolution logic
+Unit tests for commutativity and idempotency
+cargo-deny CI pipeline enforcing pure MIT
+Phase 2: Network Transport
+tpt-av-sync-net with transport trait
+TCP implementation (for LAN testing)
+WebSocket implementation (for server-based collaboration)
+Message serialization and deserialization
+Integration tests with multiple peers
+Phase 3: Playhead Synchronization
+tpt-av-sync-playhead with clock sync algorithm
+Latency estimation and compensation
+Drift correction
+Transport control sync (play, stop, record)
+Real-time performance tests
+Phase 4: Presence and Awareness
+tpt-av-sync-presence with user presence
+Remote cursor tracking
+Activity indicators
+Integration with UI layer
+Phase 5: WebRTC and Advanced Features
+WebRTC data channel implementation
+Signaling server (optional)
+Relay server (fallback)
+Peer discovery (mDNS for LAN)
+Offline editing with later sync
+9. Dependency & Licensing Rules
+Allowed Dependencies (Permissive Only)
+tpt-av-sync-utils (internal)
+tpt-av-sync-crdt (internal)
+tpt-av-sync-net (internal)
+tpt-av-sync-playhead (internal)
+tpt-av-sync-presence (internal)
+webrtc-rs (MIT) — WebRTC implementation (or webrtc crate)
+tokio (MIT) — async runtime for network I/O
+tokio-tungstenite (MIT) — WebSocket implementation
+serde (MIT/Apache) — serialization
+bincode (MIT) — binary serialization (for network efficiency)
+log (MIT/Apache) — logging facade
+Banned Dependencies
+Any C/C++ networking libraries
+Any GPL/LGPL/MPL dependencies
+Enforcement
+The deny.toml file enforces this automatically:
+
+[licenses]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "AGPL-3.0",
+    "MPL-2.0",
+]
+
+10. Workspace Cargo.toml
+
+[workspace]
+resolver = "2"
+members = [
+    "tpt-av-sync-utils",
+    "tpt-av-sync-crdt",
+    "tpt-av-sync-net",
+    "tpt-av-sync-playhead",
+    "tpt-av-sync-presence",
+    "tpt-av-sync-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tpt-solutions/tpt-av-sync"
+rust-version = "1.75"
+
+[workspace.dependencies]
+tpt-av-sync-utils = { path = "tpt-av-sync-utils", version = "0.1.0" }
+tpt-av-sync-crdt = { path = "tpt-av-sync-crdt", version = "0.1.0" }
+tpt-av-sync-net = { path = "tpt-av-sync-net", version = "0.1.0" }
+tpt-av-sync-playhead = { path = "tpt-av-sync-playhead", version = "0.1.0" }
+tpt-av-sync-presence = { path = "tpt-av-sync-presence", version = "0.1.0" }
+tokio = { version = "1.37", features = ["full"] }
+tokio-tungstenite = "0.21"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
+log = "0.4"
+
+11. Contributing & License
+This project is released under the MIT License.
+By contributing to tpt-av-sync, you agree that:
+Your code will be licensed under the same pure MIT terms.
+You will not introduce any dependency that is GPL, LGPL, AGPL, or MPL licensed.
+All CRDT operations must be proven commutative and idempotent.
+All network code must handle disconnections gracefully (offline-first).
+All playhead sync code must be real-time safe (allocation-free, lock-free).
+This ensures tpt-av-sync remains free, open, and unencumbered by copyleft restrictions for all future collaborative media software development.
+
+
+---
+
+### Your Next Steps
+
+1. **Create the repo:** `github.com/tpt-solutions/tpt-av-sync`
+2. **Initialize the workspace** with the `Cargo.toml` above
+3. **Start with `tpt-av-sync-utils`** — define `PeerId`, `OperationId`, `VectorClock`, and error types
+4. **Build `tpt-av-sync-crdt`** — implement the core CRDT with basic operations (Insert, Move, Delete)
+5. **Write property-based tests** using `proptest` to verify commutativity and idempotency
+6. **Implement `tpt-av-sync-net`** with TCP transport for local testing
+7. **Create a demo** with two peers editing the same timeline
+
+This is the most technically challenging repo because CRDTs are complex, but it's also the most valuable — it enables the "Figma for audio/video" use case that legacy DAWs cannot achieve.
