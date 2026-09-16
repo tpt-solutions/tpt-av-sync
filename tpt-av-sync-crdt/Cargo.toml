@@ -1,0 +1,23 @@
+[package]
+name = "tpt-av-sync-crdt"
+description = "CRDT engine for conflict-free real-time collaboration on media timelines"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["crdt", "collaboration", "timeline", "audio", "video"]
+categories = ["data-structures", "concurrency"]
+
+[dependencies]
+tpt-av-sync-utils = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
+proptest = { workspace = true }
+tpt-av-test-fuzz = { path = "../../tpt-av-test/tpt-av-test-fuzz" }
+
+[lints]
+workspace = true

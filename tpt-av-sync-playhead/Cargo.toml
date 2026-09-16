@@ -1,0 +1,26 @@
+[package]
+name = "tpt-av-sync-playhead"
+description = "Real-time-safe playhead synchronization: NTP-style clock sync, latency and drift compensation, transport control"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["playhead", "sync", "audio", "real-time"]
+categories = ["multimedia::audio", "date-and-time"]
+
+[dependencies]
+tpt-av-sync-utils = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "playhead"
+harness = false
+
+[lints]
+workspace = true

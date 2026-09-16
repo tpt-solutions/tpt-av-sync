@@ -1,0 +1,22 @@
+[package]
+name = "tpt-av-sync-presence"
+description = "User presence, remote cursors, avatars, and activity tracking for tpt-av-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["presence", "collaboration", "cursors"]
+categories = ["multimedia"]
+
+[dependencies]
+tpt-av-sync-utils = { workspace = true }
+tpt-av-sync-crdt = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
+
+[lints]
+workspace = true

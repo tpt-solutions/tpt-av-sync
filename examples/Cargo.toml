@@ -1,0 +1,36 @@
+[package]
+name = "tpt-av-sync-examples"
+description = "Runnable demos for the tpt-av-sync collaboration engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+tpt-av-sync-utils = { workspace = true }
+tpt-av-sync-crdt = { workspace = true }
+tpt-av-sync-net = { workspace = true }
+tpt-av-sync-playhead = { workspace = true }
+tpt-av-sync-presence = { workspace = true }
+
+[[bin]]
+name = "collaborative_editor"
+path = "src/bin/collaborative_editor.rs"
+
+[[bin]]
+name = "playhead_sync"
+path = "src/bin/playhead_sync.rs"
+
+[[bin]]
+name = "presence_demo"
+path = "src/bin/presence_demo.rs"
+
+[[bin]]
+name = "offline_sync"
+path = "src/bin/offline_sync.rs"
+
+[lints]
+workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "tpt-av-sync-server"
+description = "Optional relay and signaling server for tpt-av-sync sessions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["signaling", "relay", "webrtc"]
+categories = ["network-programming"]
+
+[dependencies]
+tpt-av-sync-utils = { workspace = true }
+tpt-av-sync-crdt = { workspace = true }
+tpt-av-sync-net = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

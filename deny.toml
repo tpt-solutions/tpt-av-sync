@@ -1,0 +1,66 @@
+# cargo-deny configuration for tpt-av-sync.
+#
+# The project is dual-licensed MIT OR Apache-2.0 and must stay free of
+# copyleft contamination. Only permissive licenses are allowed; the GPL
+# family and MPL are explicitly denied. The allow list also contains the
+# SPDX identifiers that show up in the transitive dependency tree of any
+# non-trivial Rust build (Unicode data tables, ring's multi-license, etc.)
+# — all of them permissive; none are copyleft.
+
+[graph]
+# Audit every feature combination, including the optional WebRTC transport,
+# so the license gate covers the full dependency tree.
+all-features = true
+
+[licenses]
+version = 2
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    # Permissive licenses present in the transitive dependency tree.
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "BSD-Source-Code",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "AGPL-3.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.93
+
+# ring ships a multi-license file that cargo-deny cannot resolve from the
+# manifest alone; its terms are ISC + MIT + OpenSSL (all permissive).
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC AND MIT AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed21 },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
