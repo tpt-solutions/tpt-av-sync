@@ -147,8 +147,8 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
   - [x] `signaling.rs` — WebRTC SDP offer/answer + ICE candidate exchange server
   - [x] `relay.rs` — message relay fallback for NAT-blocked peers
   - [x] `persistence.rs` — session persistence for relay/signaling server
-- [ ] `discovery.rs` — flesh out mDNS-based LAN peer discovery
-- [ ] `discovery.rs` — broadcast-based discovery fallback
+- [x] `discovery.rs` — LAN peer discovery via UDP beacon (`MulticastDiscovery`); deliberate alternative to full mDNS/DNS-SD — see `DESIGN.md` §"Deviations from spec.txt"
+- [x] `discovery.rs` — broadcast-based discovery fallback (`BroadcastDiscovery`)
 - [x] Offline-first sync: local pending-operation queue while disconnected
 - [x] Offline-first sync: resync/merge flow on reconnect
 - [x] `OperationBatcher` — batch operations at fixed interval (e.g. 16ms) in `tpt-av-sync-net`
@@ -177,3 +177,59 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
 - [ ] Publish `tpt-av-sync-presence` to crates.io
 - [ ] Publish `tpt-av-sync-server` to crates.io (if stabilized)
 - [ ] Final `cargo-deny` + full dependency-tree license audit
+
+---
+
+## Phase 7 — Security Hardening
+
+Findings from a security recon pass: no transport encryption on TCP/WebSocket (plaintext bincode), no peer authentication anywhere (`PeerId` is self-asserted in every handshake and in the relay/signaling server's per-frame `from` field), no rate limiting/connection caps, unbounded per-room op-log growth, bincode deserializing untrusted bytes with no size guard beyond the flat 64 MiB frame cap, and WebRTC signaling leans on a public Google STUN server (leaks participant IPs). Land in this order — each step is independently testable:
+
+- [ ] **B1 — Bounded deserialization + field validation** (no protocol changes)
+  - [ ] `tpt_av_sync_utils::security::bounded_deserialize<T>` using bincode's `Options::with_limit`
+  - [ ] Replace direct `bincode::deserialize` calls in `tcp.rs`, `websocket.rs`, `webrtc.rs`, `relay.rs`, `signaling.rs`, `persistence.rs`
+  - [ ] `TimelineOperation::validate()` in `operation.rs` (max string lengths, max envelope-point count)
+  - [ ] Call `validate()` from `SyncEngine`'s inbound path (`engine.rs`) and from `relay.rs` before forwarding/persisting
+  - [ ] Reject-path tests (oversized field, oversized frame)
+- [ ] **B2 — Bounded persistence** (`persistence.rs`)
+  - [ ] `SessionStore::open_with_limits(dir, max_bytes_per_room, max_ops_per_room)`
+  - [ ] v1: size-triggered truncate/rotate
+  - [ ] v2 (optional): compaction via `TimelineSnapshot::from_ops` replay
+- [ ] **B3 — Relay/signaling connection caps, rate limiting, Origin check**
+  - [ ] Global + per-IP connection caps; per-room member caps
+  - [ ] Hand-rolled per-connection token-bucket rate limit
+  - [ ] `Origin` header allowlist check (no-op for LAN mode)
+- [ ] **B4 — Transport encryption (TLS/wss)**
+  - [ ] `TransportSecurity`/`TlsConfig` types in `tpt_av_sync_utils::security`
+  - [ ] `tcp.rs`: wrap blocking `TcpStream` with `rustls::{ServerConnection, ClientConnection}`
+  - [ ] `websocket.rs`: manual TCP dial/accept + `tokio-rustls` wrap + `tokio_tungstenite::{client_async, accept_async}` for `wss://`
+  - [ ] Secure-by-default wrappers over existing `listen`/`connect`/`serve`, self-signed cert via `rcgen` + TOFU fingerprint pinning
+  - [ ] Explicit loudly-named plaintext opt-outs (`listen_plaintext_insecure`, etc.) with warning logs
+  - [ ] `TlsConfig::Loaded` path for real CA certs (public deployment)
+  - [ ] Add workspace deps: `tokio-rustls`, `rustls-pemfile`, `rcgen`; pin `rustls` to match `webrtc`'s transitive version
+- [ ] **B5 — Peer authentication (keypair identity)**
+  - [ ] `PeerIdentity` (Ed25519) in `tpt_av_sync_utils::security`; `PeerId` derived from public key
+  - [ ] Bump `PROTOCOL_VERSION` to 2 and enforce it (currently ignored)
+  - [ ] Challenge/response handshake (nonce + signature) in `message.rs`/`tcp.rs`/`websocket.rs`
+  - [ ] Add workspace dep: `ed25519-dalek`
+- [ ] **B6 — Room authorization (shared token, bound peer identity)**
+  - [ ] `RoomToken` verified via keyed hash (not raw passphrase over the wire)
+  - [ ] `Join{room, token_proof, verifying_key}` first-frame requirement in `relay.rs`/`signaling.rs`
+  - [ ] Bind peer_id to connection server-side; stop trusting client-supplied `from` on subsequent frames
+  - [ ] `RoomAuth::Open` explicit opt-out for LAN/trusted use
+- [ ] Re-run `cargo deny check` after new deps land
+
+---
+
+## Phase 8 — Innovative Features
+
+- [ ] Session recording & replay: record full tagged-op log, replay at controllable speed/to a target timestamp via `TimelineCrdt::apply_remote` (build on `history.rs`/`persistence.rs`/`TimelineSnapshot`)
+- [ ] Conflict/merge visualizer: emit a structured "resolution event" from `merge.rs` (which op won a concurrent move/delete/split and why); surface it in `examples/collaborative_editor.rs` or a new example
+- [ ] Live session inspector/dashboard (TUI via `ratatui`): connected peers, presence state, playhead positions, op throughput — hook into `SyncEngine::process_messages`
+
+---
+
+## Phase 9 — Adoption Tooling
+
+- [ ] `cargo-generate` project template wiring `tpt-av-sync-{utils,crdt,net,playhead,presence}` with a minimal working `SyncEngine` setup
+- [ ] New `tpt-av-sync-cli` binary crate: inspect/replay/dump a `SessionStore` op-log; run a local relay server for testing (reuse `RelayServer` directly)
+- [ ] `Dockerfile` + `docker-compose.yml` for `tpt-av-sync-server` (relay/signaling ports + persistent volume for op-logs)
