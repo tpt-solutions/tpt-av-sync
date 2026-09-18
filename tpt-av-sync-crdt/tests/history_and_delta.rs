@@ -5,6 +5,7 @@ use tpt_av_sync_crdt::{
     EnvelopeType, OpTag, Session, SessionMetadataUpdate, TargetId, TimelineCrdt,
     TimelineOperation, TrackData, TrackId, TrimEdge,
 };
+use tpt_av_sync_utils::wire;
 use tpt_av_sync_utils::PeerId;
 
 fn setup(crdt: &mut TimelineCrdt) -> (TrackId, ClipId) {
@@ -292,8 +293,8 @@ fn tagged_operations_flow_through_bincode() {
     // Snapshot wire-format smoke test: snapshots serialize losslessly.
     let mut crdt = TimelineCrdt::new(PeerId::from_u64(7));
     setup(&mut crdt);
-    let bytes = bincode::serialize(&crdt.snapshot()).expect("serialize");
-    let snap: tpt_av_sync_crdt::TimelineSnapshot = bincode::deserialize(&bytes).unwrap();
+    let bytes = wire::encode(&crdt.snapshot()).expect("serialize");
+    let snap: tpt_av_sync_crdt::TimelineSnapshot = wire::decode(&bytes).unwrap();
     let restored = TimelineCrdt::from_snapshot(snap, PeerId::from_u64(8));
     assert_eq!(crdt.view(), restored.view());
 }

@@ -190,6 +190,7 @@ impl ClockSynchronizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tpt_av_sync_utils::wire;
 
     fn peer() -> PeerId {
         PeerId::from_u64(1)
@@ -258,8 +259,8 @@ mod tests {
     #[test]
     fn message_serde_roundtrip() {
         let msg = ClockSyncMessage::request(peer(), 42);
-        let bytes = bincode::serialize(&msg).unwrap();
-        let back: ClockSyncMessage = bincode::deserialize(&bytes).unwrap();
+        let bytes = wire::encode(&msg).unwrap();
+        let back: ClockSyncMessage = wire::decode(&bytes).unwrap();
         assert_eq!(back, msg);
     }
 }

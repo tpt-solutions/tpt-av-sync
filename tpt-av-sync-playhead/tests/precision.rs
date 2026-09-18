@@ -186,10 +186,11 @@ fn transport_followers_follow_the_master() {
     let mut c = TransportSync::new();
     a.set_master(true);
 
-    let mut commands = Vec::new();
-    commands.push((a.play(1_000), TransportState::Playing));
-    commands.push((a.locate(2_048), TransportState::Playing)); // locate keeps state
-    commands.push((a.stop(3_000), TransportState::Stopped));
+    let commands = vec![
+        (a.play(1_000), TransportState::Playing),
+        (a.locate(2_048), TransportState::Playing), // locate keeps state
+        (a.stop(3_000), TransportState::Stopped),
+    ];
     for (cmd, expected) in &commands {
         assert!(b.on_remote_control(cmd, master));
         assert!(c.on_remote_control(cmd, master));

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
-use tpt_av_sync_utils::{PeerId, SyncError};
+use tpt_av_sync_utils::{PeerId, SyncError, wire};
 
 /// Default multicast group and port for LAN discovery.
 pub const DEFAULT_MULTICAST_ADDR: &str = "239.255.42.98:51820";
@@ -144,7 +144,7 @@ impl DiscoveryCore {
             session: self.session.clone(),
             port: self.listen_port,
         };
-        let bytes = bincode::serialize(&packet)
+        let bytes = wire::encode(&packet)
             .map_err(|e| SyncError::serialization(e.to_string()))?;
         self.socket
             .send_to(&bytes, self.target)
@@ -157,7 +157,7 @@ impl DiscoveryCore {
         loop {
             match self.socket.recv_from(&mut buf) {
                 Ok((n, from)) => {
-                    if let Ok(packet) = bincode::deserialize::<DiscoveryPacket>(&buf[..n]) {
+                    if let Ok(packet) = wire::decode::<DiscoveryPacket>(&buf[..n]) {
                         if packet.peer_id == self.local {
                             continue;
                         }
@@ -297,8 +297,8 @@ mod tests {
             session: Some("session-1".into()),
             port: 9000,
         };
-        let bytes = bincode::serialize(&packet).unwrap();
-        let back: DiscoveryPacket = bincode::deserialize(&bytes).unwrap();
+        let bytes = wire::encode(&packet).unwrap();
+        let back: DiscoveryPacket = wire::decode(&bytes).unwrap();
         assert_eq!(back, packet);
     }
 }

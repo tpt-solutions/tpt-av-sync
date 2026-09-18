@@ -2,6 +2,7 @@
 name = "tpt-av-sync-presence"
 description = "User presence, remote cursors, avatars, and activity tracking for tpt-av-sync"
 version.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -16,7 +17,6 @@ tpt-av-sync-crdt = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
-bincode = { workspace = true }
 
 [lints]
 workspace = true

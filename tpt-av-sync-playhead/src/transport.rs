@@ -174,6 +174,7 @@ impl TransportSync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tpt_av_sync_utils::wire;
 
     #[test]
     fn local_commands_update_state() {
@@ -228,8 +229,8 @@ mod tests {
             TransportControl::Locate { position: 3 },
             TransportControl::Record { position: 4 },
         ] {
-            let bytes = bincode::serialize(&cmd).unwrap();
-            let back: TransportControl = bincode::deserialize(&bytes).unwrap();
+            let bytes = wire::encode(&cmd).unwrap();
+            let back: TransportControl = wire::decode(&bytes).unwrap();
             assert_eq!(back, cmd);
         }
     }

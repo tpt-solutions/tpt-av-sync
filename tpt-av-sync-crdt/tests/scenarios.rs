@@ -1,24 +1,13 @@
 //! Scenario tests for spec §5.1 — concurrent operations from multiple
 //! peers must converge identically on every replica.
 
-use std::time::SystemTime;
 
 use tpt_av_sync_crdt::{
     ClipData, ClipId, TaggedOperation, TimelineCrdt, TimelineOperation, TrackData, TrackId,
     TrimEdge,
 };
-use tpt_av_sync_utils::{OperationId, PeerId, VectorClock};
 
-fn tagged(lamport: u64, peer: PeerId, op: TimelineOperation) -> TaggedOperation {
-    TaggedOperation {
-        op_id: OperationId::new(lamport, peer),
-        operation: op,
-        lamport_ts: lamport,
-        vector_clock: VectorClock::new(),
-        peer_id: peer,
-        timestamp: SystemTime::UNIX_EPOCH,
-    }
-}
+use tpt_av_sync_utils::PeerId;
 
 fn setup_clip(crdt: &mut TimelineCrdt, clip_id: ClipId, start: u64, dur: u64) {
     let track = TrackId::from_u64(1);

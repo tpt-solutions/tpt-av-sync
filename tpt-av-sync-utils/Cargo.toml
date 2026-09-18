@@ -2,6 +2,7 @@
 name = "tpt-av-sync-utils"
 description = "Shared types, logical clocks, time helpers, and error handling for the tpt-av-sync collaboration engine"
 version.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -12,9 +13,10 @@ categories = ["concurrency", "data-structures"]
 
 [dependencies]
 serde = { workspace = true }
-
-[dev-dependencies]
 bincode = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand_core = { workspace = true }
+sha2 = { workspace = true }
 
 [lints]
 workspace = true

@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use tpt_av_sync_crdt::{ClipData, ClipId, TimelineCrdt, TimelineOperation, TrackData, TrackId, TrimEdge};
-use tpt_av_sync_net::{SyncEngine, TcpTransport, Transport};
+use tpt_av_sync_net::{SyncEngine, TcpTransport};
 use tpt_av_sync_utils::PeerId;
 
 fn main() {

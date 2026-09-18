@@ -111,7 +111,7 @@ fn relay_persists_and_bootstraps_lone_joiner() {
 
 #[test]
 fn signaling_server_fans_out_to_the_room() {
-    use std::sync::mpsc;
+    
 
     let bind: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let (_server, addr) = tpt_av_sync_server::SignalingServer::serve(bind).expect("serve signaling");
@@ -140,7 +140,7 @@ fn signaling_server_fans_out_to_the_room() {
                 room: "room-x".into(),
                 from: PeerId::from_u64(peer),
                 to: None,
-                payload: tpt_av_sync_server::SignalPayload::Join,
+                payload: tpt_av_sync_server::SignalPayload::Join { token_proof: None },
             };
             ws.send(tokio_tungstenite::tungstenite::Message::Text(
                 serde_json::to_string(&frame).unwrap(),

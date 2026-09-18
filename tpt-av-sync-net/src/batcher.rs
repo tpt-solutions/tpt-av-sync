@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn flush_honors_interval() {
         let mut batcher = OperationBatcher::new(Duration::from_millis(10_000));
-        let (mut a, mut b) = LoopbackTransport::pair(PeerId::from_u64(1), PeerId::from_u64(2));
+        let (mut a, b) = LoopbackTransport::pair(PeerId::from_u64(1), PeerId::from_u64(2));
         batcher.add(op(1));
         batcher.add(op(2));
         assert_eq!(batcher.pending_len(), 2);

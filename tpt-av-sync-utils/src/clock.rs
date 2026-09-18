@@ -132,7 +132,6 @@ impl VectorClock {
     }
 
     /// Returns the set of tracked peers.
-    #[must_use]
     pub fn peers(&self) -> impl Iterator<Item = &PeerId> {
         self.clocks.keys()
     }
@@ -240,8 +239,8 @@ mod tests {
     #[test]
     fn vector_clock_serde_roundtrip() {
         let clock = vc(&[(7, 3), (9, 1)]);
-        let bytes = bincode::serialize(&clock).expect("serialize");
-        let back: VectorClock = bincode::deserialize(&bytes).expect("deserialize");
+        let bytes = crate::wire::encode(&clock).expect("serialize");
+        let back: VectorClock = crate::wire::decode(&bytes).expect("deserialize");
         assert_eq!(back, clock);
     }
 }

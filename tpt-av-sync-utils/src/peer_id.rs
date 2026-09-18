@@ -112,9 +112,9 @@ mod tests {
     #[test]
     fn serde_roundtrip_matches_raw_u64() {
         let id = PeerId::from_u64(0xdead_beef_cafe);
-        let bytes = bincode::serialize(&id).expect("serialize");
+        let bytes = crate::wire::encode(&id).expect("serialize");
         assert_eq!(bytes, 0xdead_beef_cafe_u64.to_le_bytes());
-        let back: PeerId = bincode::deserialize(&bytes).expect("deserialize");
+        let back: PeerId = crate::wire::decode(&bytes).expect("deserialize");
         assert_eq!(back, id);
     }
 }

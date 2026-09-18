@@ -2,6 +2,7 @@
 name = "tpt-av-sync-playhead"
 description = "Real-time-safe playhead synchronization: NTP-style clock sync, latency and drift compensation, transport control"
 version.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -15,7 +16,6 @@ tpt-av-sync-utils = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
-bincode = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]

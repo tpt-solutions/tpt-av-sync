@@ -5,6 +5,9 @@
 //! `to = Some(peer)` is a direct delivery, `to = None` fans out to the
 //! rest of the room (minus the sender).
 
+use crate::limits::{origin_allowed, ConnectionGuard, ServerLimits, TokenBucket};
+use crate::relay::RoomAuth;
+use tpt_av_sync_utils::room_token_proof;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -14,13 +17,19 @@ use tpt_av_sync_utils::{PeerId, SyncError};
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc as tokio_mpsc;
+use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 /// The payload of a signaling frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SignalPayload {
-    /// Announce presence in the room.
-    Join,
+    /// Announce presence in the room. Under [`RoomAuth::Token`] the proof
+    /// must match `room_token_proof(secret, room)`.
+    Join {
+        /// Proof-of-membership under the room secret (Open mode: `None`).
+        token_proof: Option<[u8; 32]>,
+    },
     /// Leave the room.
     Leave,
     /// An SDP offer.
@@ -68,15 +77,34 @@ pub struct SignalingServer {
 
 struct SignalingInner {
     addr: SocketAddr,
+    limits: ServerLimits,
+    auth: RoomAuth,
+    guard: Arc<ConnectionGuard>,
     rooms: Mutex<HashMap<String, Room>>,
     shutdown: AtomicBool,
     _rt: Arc<tokio::runtime::Runtime>,
 }
 
 impl SignalingServer {
-    /// Starts the signaling server on `bind`. Returns the server handle and
-    /// the bound address.
+    /// Starts the signaling server on `bind` with default admission
+    /// limits. Returns the server handle and the bound address.
     pub fn serve(bind: SocketAddr) -> Result<(Self, SocketAddr), SyncError> {
+        Self::serve_with_limits(bind, ServerLimits::default())
+    }
+
+    /// Starts the signaling server with explicit admission limits
+    /// (connection caps, rate limiting, Origin allowlist) and open room
+    /// admission.
+    pub fn serve_with_limits(
+        bind: SocketAddr,
+        limits: ServerLimits,
+    ) -> Result<(Self, SocketAddr), SyncError> {
+        Self::serve_full(bind, limits, RoomAuth::Open)
+    }
+
+    /// Starts the signaling server with full configuration, including
+    /// room authorization (see [`RoomAuth`]).
+    pub fn serve_full(bind: SocketAddr, limits: ServerLimits, auth: RoomAuth) -> Result<(Self, SocketAddr), SyncError> {
         let rt = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
@@ -91,8 +119,12 @@ impl SignalingServer {
             .local_addr()
             .map_err(|e| SyncError::transport(e.to_string()))?;
 
+        let guard = ConnectionGuard::new(limits.clone());
         let inner = Arc::new(SignalingInner {
             addr,
+            limits,
+            auth,
+            guard,
             rooms: Mutex::new(HashMap::new()),
             shutdown: AtomicBool::new(false),
             _rt: rt.clone(),
@@ -101,15 +133,43 @@ impl SignalingServer {
         let accept_inner = inner.clone();
         rt.spawn(async move {
             while !accept_inner.shutdown.load(Ordering::Relaxed) {
-                let Ok((stream, _)) = listener.accept().await else {
+                let Ok((stream, peer_addr)) = listener.accept().await else {
                     break;
                 };
                 let task_inner = accept_inner.clone();
                 tokio::spawn(async move {
-                    let Ok(ws) = tokio_tungstenite::accept_async(stream).await else {
+                    // Admission control: global + per-IP caps.
+                    let Some(_lease) = task_inner.guard.try_admit(peer_addr.ip()) else {
                         return;
                     };
-                    SignalingServer::serve_connection(task_inner, ws).await;
+                    // Origin allowlist (empty list = LAN mode, allow all).
+                    let allowed = task_inner.limits.allowed_origins.clone();
+                    let ws = tokio_tungstenite::accept_hdr_async(
+                        stream,
+                        move |req: &Request, resp: Response| {
+                            let origin = req
+                                .headers()
+                                .get("Origin")
+                                .and_then(|v| v.to_str().ok());
+                            if origin_allowed(origin, &allowed) {
+                                Ok(resp)
+                            } else {
+                                Err(Response::builder()
+                                    .status(StatusCode::FORBIDDEN)
+                                    .body(Some("origin not allowed".to_string()))
+                                    .expect("static error response"))
+                            }
+                        },
+                    )
+                    .await;
+                    let Ok(ws) = ws else {
+                        return;
+                    };
+                    let mut bucket = TokenBucket::new(
+                        task_inner.limits.rate_burst,
+                        task_inner.limits.rate_refill_per_sec,
+                    );
+                    SignalingServer::serve_connection(task_inner, ws, &mut bucket).await;
                 });
             }
         });
@@ -128,8 +188,11 @@ impl SignalingServer {
         self.inner.shutdown.store(true, Ordering::Relaxed);
     }
 
-    async fn serve_connection<S>(inner: Arc<SignalingInner>, ws: tokio_tungstenite::WebSocketStream<S>)
-    where
+    async fn serve_connection<S>(
+        inner: Arc<SignalingInner>,
+        ws: tokio_tungstenite::WebSocketStream<S>,
+        bucket: &mut TokenBucket,
+    ) where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     {
         let (mut sink, mut reader) = ws.split();
@@ -147,7 +210,12 @@ impl SignalingServer {
 
         while let Some(msg) = reader.next().await {
             let text = match msg {
-                Ok(WsMessage::Text(text)) => text,
+                Ok(WsMessage::Text(text)) => {
+                    if !bucket.try_take() {
+                        break; // sender over budget: close the connection
+                    }
+                    text
+                }
                 Ok(WsMessage::Close(_)) | Err(_) => break,
                 Ok(_) => continue,
             };
@@ -156,15 +224,23 @@ impl SignalingServer {
             };
             match frame.payload {
                 SignalPayload::Leave => break,
-                SignalPayload::Join => {
-                    inner
-                        .rooms
-                        .lock()
-                        .expect("rooms lock")
-                        .entry(frame.room.clone())
-                        .or_default()
-                        .members
-                        .insert(frame.from, tx.clone());
+                SignalPayload::Join { token_proof } => {
+                    // Room authorization (B6): under token auth the join
+                    // must carry a valid proof.
+                    if let RoomAuth::Token { secret } = &inner.auth {
+                        match token_proof {
+                            Some(proof)
+                                if proof == room_token_proof(secret, &frame.room) => {}
+                            _ => break, // missing or bad proof: close
+                        }
+                    }
+                    let mut rooms = inner.rooms.lock().expect("rooms lock");
+                    let room = rooms.entry(frame.room.clone()).or_default();
+                    let known = room.members.contains_key(&frame.from);
+                    if !known && room.members.len() >= inner.limits.max_room_members {
+                        break; // room full: close the connection
+                    }
+                    room.members.insert(frame.from, tx.clone());
                     joined.push((frame.room.clone(), frame.from));
                 }
                 _ => {

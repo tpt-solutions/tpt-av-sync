@@ -44,12 +44,11 @@ impl EnvelopeStore {
     #[must_use]
     pub fn get(&self, target: &TargetId, envelope_type: &EnvelopeType) -> Option<&[EnvelopePoint]> {
         self.envelopes
-            .get(&(target.clone(), envelope_type.clone()))
+            .get(&(*target, envelope_type.clone()))
             .map(|reg| reg.get().as_slice())
     }
 
     /// Iterates over all envelopes that have been set.
-    #[must_use]
     pub fn iter(
         &self,
     ) -> impl Iterator<Item = (&TargetId, &EnvelopeType, &[EnvelopePoint])> {

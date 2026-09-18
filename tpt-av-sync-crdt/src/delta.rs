@@ -166,7 +166,7 @@ pub fn compute_delta(old: &SessionView, new: &SessionView) -> Vec<TimelineOperat
     for ((target, env_type), points) in &new.envelopes {
         if old.envelopes.get(&(*target, env_type.clone())) != Some(points) {
             delta.push(TimelineOperation::UpdateEnvelope {
-                target_id: target.clone(),
+                target_id: *target,
                 envelope_type: env_type.clone(),
                 points: points.clone(),
             });

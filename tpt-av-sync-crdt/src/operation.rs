@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use tpt_av_sync_utils::{OperationId, PeerId, VectorClock};
+use tpt_av_sync_utils::{OperationId, PeerId, SyncError, VectorClock};
 
 /// Unique identifier for a clip.
 #[derive(
@@ -374,6 +374,70 @@ pub enum TimelineOperation {
 }
 
 impl TimelineOperation {
+    /// Validates structural payload limits for untrusted inputs: string
+    /// lengths and envelope sizes (see
+    /// [`tpt_av_sync_utils::security`] for the constants).
+    ///
+    /// The [`crate::TimelineCrdt`] applies this on every inbound operation;
+    /// relays must apply it before forwarding or persisting. Cheap — no
+    /// allocation beyond the error.
+    ///
+    /// # Errors
+    ///
+    /// [`SyncError::InvalidOperation`] when a field exceeds its limit.
+    pub fn validate(&self) -> Result<(), SyncError> {
+        use tpt_av_sync_utils::security::{validate_string, MAX_ENVELOPE_POINTS};
+        match self {
+            TimelineOperation::InsertClip { clip, .. } => {
+                validate_string(&clip.name, "clip name")?;
+                validate_string(&clip.source, "clip source")
+            }
+            TimelineOperation::UpdateClipMetadata { updates, .. } => {
+                if let Some(v) = &updates.name {
+                    validate_string(v, "clip name")?;
+                }
+                if let Some(v) = &updates.source {
+                    validate_string(v, "clip source")?;
+                }
+                Ok(())
+            }
+            TimelineOperation::InsertTrack { track, .. } => {
+                validate_string(&track.name, "track name")
+            }
+            TimelineOperation::UpdateTrackMetadata { updates, .. } => {
+                if let Some(v) = &updates.name {
+                    validate_string(v, "track name")?;
+                }
+                Ok(())
+            }
+            TimelineOperation::UpdateEnvelope {
+                envelope_type, points, ..
+            } => {
+                if points.len() > MAX_ENVELOPE_POINTS {
+                    return Err(SyncError::invalid(format!(
+                        "envelope point count {} exceeds limit {MAX_ENVELOPE_POINTS}",
+                        points.len()
+                    )));
+                }
+                if let EnvelopeType::Custom(name) = envelope_type {
+                    validate_string(name, "envelope parameter name")?;
+                }
+                Ok(())
+            }
+            TimelineOperation::UpdateSessionMetadata { updates } => {
+                if let Some(v) = &updates.name {
+                    validate_string(v, "session name")?;
+                }
+                Ok(())
+            }
+            TimelineOperation::MoveClip { .. }
+            | TimelineOperation::DeleteClip { .. }
+            | TimelineOperation::SplitClip { .. }
+            | TimelineOperation::TrimClip { .. }
+            | TimelineOperation::DeleteTrack { .. } => Ok(()),
+        }
+    }
+
     /// Returns the ids this operation reads or mutates, used for causal
     /// buffering of operations that arrive before their targets.
     #[must_use]
@@ -444,6 +508,7 @@ impl TaggedOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tpt_av_sync_utils::wire;
 
     #[test]
     fn serde_roundtrip_of_every_operation() {
@@ -511,8 +576,8 @@ mod tests {
             },
         ];
         for op in ops {
-            let bytes = bincode::serialize(&op).expect("serialize");
-            let back: TimelineOperation = bincode::deserialize(&bytes).expect("deserialize");
+            let bytes = wire::encode(&op).expect("serialize");
+            let back: TimelineOperation = wire::decode(&bytes).expect("deserialize");
             assert_eq!(back, op);
         }
     }
@@ -549,8 +614,8 @@ mod tests {
             peer_id: PeerId::from_u64(9),
             timestamp: SystemTime::UNIX_EPOCH,
         };
-        let bytes = bincode::serialize(&tagged).expect("serialize");
-        let back: TaggedOperation = bincode::deserialize(&bytes).expect("deserialize");
+        let bytes = wire::encode(&tagged).expect("serialize");
+        let back: TaggedOperation = wire::decode(&bytes).expect("deserialize");
         assert_eq!(back, tagged);
     }
 }

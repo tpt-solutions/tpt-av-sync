@@ -235,6 +235,7 @@ impl PresenceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tpt_av_sync_utils::wire;
     use crate::avatar::Color;
 
     fn alice() -> UserInfo {
@@ -321,8 +322,8 @@ mod tests {
         let mut mgr = PresenceManager::new(alice(), IdleConfig::default());
         mgr.update_local_cursor(CursorState::new(2_000).with_playhead(96_000));
         let update = mgr.generate_update();
-        let bytes = bincode::serialize(&update).unwrap();
-        let back: PresenceUpdate = bincode::deserialize(&bytes).unwrap();
+        let bytes = wire::encode(&update).unwrap();
+        let back: PresenceUpdate = wire::decode(&bytes).unwrap();
         assert_eq!(back, update);
     }
 }

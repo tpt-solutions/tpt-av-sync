@@ -307,6 +307,11 @@ impl SyncEngine {
     }
 
     fn handle_operation(&mut self, peer: PeerId, op: TaggedOperation) {
+        // Untrusted input: structural limits before the CRDT sees it.
+        if let Err(err) = op.operation.validate() {
+            log::warn!("rejecting invalid operation from {peer}: {err}");
+            return;
+        }
         match self.crdt.apply_remote(op.clone()) {
             Ok(()) => {
                 let _ = self
@@ -336,22 +341,8 @@ mod tests {
     use super::*;
     use crate::transport::LoopbackTransport;
     use tpt_av_sync_crdt::{ClipData, ClipId, TimelineOperation, TrackData, TrackId};
-    use tpt_av_sync_utils::{OperationId, VectorClock};
-    use std::time::SystemTime;
-
-    fn op_of(lamport: u64) -> TaggedOperation {
-        let peer = PeerId::from_u64(42);
-        TaggedOperation {
-            op_id: OperationId::new(lamport, peer),
-            operation: TimelineOperation::DeleteClip {
-                clip_id: ClipId::from_u64(1),
-            },
-            lamport_ts: lamport,
-            vector_clock: VectorClock::new(),
-            peer_id: peer,
-            timestamp: SystemTime::UNIX_EPOCH,
-        }
-    }
+    
+    
 
     fn crdt_with_track(peer: PeerId) -> TimelineCrdt {
         let mut crdt = TimelineCrdt::new(peer);

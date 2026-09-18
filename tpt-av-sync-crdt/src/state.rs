@@ -275,13 +275,11 @@ impl Session {
     }
 
     /// All track records, keyed by id.
-    #[must_use]
     pub fn tracks(&self) -> impl Iterator<Item = (&TrackId, &TrackCrdt)> {
         self.tracks.iter()
     }
 
     /// All clip records, keyed by id.
-    #[must_use]
     pub fn clips(&self) -> impl Iterator<Item = (&ClipId, &ClipCrdt)> {
         self.clips.iter()
     }
@@ -481,7 +479,7 @@ impl Session {
         let envelopes: BTreeMap<(TargetId, EnvelopeType), Vec<EnvelopePoint>> = self
             .envelopes
             .iter()
-            .map(|(t, e, pts)| ((t.clone(), e.clone()), pts.to_vec()))
+            .map(|(t, e, pts)| ((*t, e.clone()), pts.to_vec()))
             .collect();
 
         SessionView {

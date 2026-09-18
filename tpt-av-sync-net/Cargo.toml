@@ -2,6 +2,7 @@
 name = "tpt-av-sync-net"
 description = "Network transport and replication engine for tpt-av-sync (TCP, WebSocket, optional WebRTC)"
 version.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -14,6 +15,7 @@ categories = ["network-programming"]
 default = ["websocket"]
 websocket = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 webrtc = ["dep:webrtc", "dep:tokio", "dep:futures-util", "dep:bytes"]
+tls = ["dep:rustls", "dep:tokio-rustls", "dep:rcgen", "dep:rustls-pemfile", "dep:tokio"]
 
 [dependencies]
 tpt-av-sync-utils = { workspace = true }
@@ -21,7 +23,6 @@ tpt-av-sync-crdt = { workspace = true }
 tpt-av-sync-playhead = { workspace = true }
 tpt-av-sync-presence = { workspace = true }
 serde = { workspace = true }
-bincode = { workspace = true }
 socket2 = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, optional = true }
@@ -29,6 +30,10 @@ tokio-tungstenite = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 webrtc = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+tokio-rustls = { workspace = true, optional = true }
+rcgen = { workspace = true, optional = true }
+rustls-pemfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

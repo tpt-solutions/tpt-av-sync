@@ -4,6 +4,7 @@
 use tpt_av_sync_presence::{
     CursorState, IdleConfig, PresenceManager, PresenceState, PresenceUpdate, UserInfo,
 };
+use tpt_av_sync_utils::wire;
 use tpt_av_sync_utils::PeerId;
 
 fn manager(peer: u64, name: &str) -> PresenceManager {
@@ -24,8 +25,8 @@ fn two_peers_exchange_cursors_both_directions() {
     // Alice moves her cursor; the update goes over the wire.
     alice.update_local_cursor(CursorState::new(1_100).with_playhead(24_000));
     let wire = alice.generate_update();
-    let bytes = bincode::serialize(&wire).unwrap();
-    let received: PresenceUpdate = bincode::deserialize(&bytes).unwrap();
+    let bytes = wire::encode(&wire).unwrap();
+    let received: PresenceUpdate = wire::decode(&bytes).unwrap();
     bob.receive_update(received);
 
     // Bob moves his; the update comes back the other way.
@@ -35,7 +36,7 @@ fn two_peers_exchange_cursors_both_directions() {
             .with_selection(0, 480),
     );
     let wire = bob.generate_update();
-    alice.receive_update(bincode::deserialize(&bincode::serialize(&wire).unwrap()).unwrap());
+    alice.receive_update(wire::decode(&wire::encode(&wire).unwrap()).unwrap());
 
     // Both see each other's cursor.
     assert_eq!(alice.remote_cursors().len(), 1);

@@ -16,7 +16,8 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use tpt_av_sync_utils::{PeerId, SyncError};
+use tpt_av_sync_utils::identity::IdentityError;
+use tpt_av_sync_utils::{PeerId, PeerIdentity, PeerIdentityProof, SyncError, wire};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
@@ -30,6 +31,10 @@ struct PeerConn {
 
 struct WsInner {
     local: PeerId,
+    /// Authenticated-mode identity (see `tcp::Inner`); interior-mutable so
+    /// dial-side handles can attach one.
+    identity: Mutex<Option<Arc<PeerIdentity>>>,
+    require_remote_identity: AtomicBool,
     peers: Mutex<HashMap<PeerId, PeerConn>>,
     inbox: Mutex<mpsc::Receiver<(PeerId, SyncMessage)>>,
     inbound_tx: mpsc::Sender<(PeerId, SyncMessage)>,
@@ -74,6 +79,8 @@ impl WebsocketTransport {
         let (tx, rx) = mpsc::channel();
         let inner = Arc::new(WsInner {
             local,
+            identity: Mutex::new(None),
+            require_remote_identity: AtomicBool::new(false),
             peers: Mutex::new(HashMap::new()),
             inbox: Mutex::new(rx),
             inbound_tx: tx,
@@ -124,23 +131,41 @@ impl WebsocketTransport {
     {
         let (mut sink, mut reader) = ws.split();
 
-        // Send our hello, then wait for theirs.
-        let hello = bincode::serialize(&WireFrame::Hello {
-            peer_id: inner.local,
+        let local_identity = inner.identity();
+        let local = local_identity
+            .as_ref()
+            .map(|id| id.peer_id())
+            .unwrap_or(inner.local);
+
+        // Send our hello, then wait for theirs (answering a liveness
+        // challenge on the way — the remote challenges us when we
+        // presented an identity).
+        let hello = wire::encode(&WireFrame::Hello {
+            peer_id: local,
             protocol: PROTOCOL_VERSION,
+            identity: local_identity.as_ref().map(|id| id.hello_proof()),
         })
         .map_err(|e| SyncError::serialization(e.to_string()))?;
         sink.send(WsMessage::Binary(hello))
             .await
             .map_err(|e| SyncError::transport(e.to_string()))?;
 
-        let peer = loop {
+        let remote = loop {
             match reader.next().await {
                 Some(Ok(WsMessage::Binary(bytes))) => {
-                    if let Ok(WireFrame::Hello { peer_id, .. }) =
-                        bincode::deserialize::<WireFrame>(&bytes)
+                    if let Ok(WireFrame::Hello {
+                        peer_id,
+                        protocol,
+                        identity,
+                    }) = wire::decode::<WireFrame>(&bytes)
                     {
-                        break peer_id;
+                        WsInner::verify_remote_hello(
+                            inner.requires_remote_identity(),
+                            protocol,
+                            peer_id,
+                            identity,
+                        )?;
+                        break (peer_id, identity);
                     }
                 }
                 Some(Ok(WsMessage::Ping(p))) => {
@@ -153,6 +178,35 @@ impl WebsocketTransport {
                 Some(Ok(_)) => continue,
             }
         };
+        let (peer, remote_identity) = remote;
+
+        // Challenge a remote that presented an identity: prove liveness.
+        if let Some(proof) = &remote_identity {
+            let nonce = tpt_av_sync_utils::random_nonce();
+            let challenge = wire::encode(&WireFrame::Challenge { nonce })
+                .map_err(|e| SyncError::serialization(e.to_string()))?;
+            sink.send(WsMessage::Binary(challenge))
+                .await
+                .map_err(|e| SyncError::transport(e.to_string()))?;
+            loop {
+                match reader.next().await {
+                    Some(Ok(WsMessage::Binary(bytes))) => {
+                        if let Ok(WireFrame::ChallengeResponse { signature }) =
+                            wire::decode::<WireFrame>(&bytes)
+                        {
+                            tpt_av_sync_utils::identity::verify_challenge_response(
+                                proof, &nonce, &signature.0,
+                            )
+                            .map_err(|_| SyncError::transport("challenge response rejected"))?;
+                            break;
+                        }
+                    }
+                    Some(Ok(_)) => continue,
+                    Some(Err(e)) => return Err(SyncError::transport(e.to_string())),
+                    None => return Err(SyncError::Disconnected),
+                }
+            }
+        }
 
         let (task_tx, mut task_rx) = tokio_mpsc::unbounded_channel::<Vec<u8>>();
         inner
@@ -184,11 +238,15 @@ impl WebsocketTransport {
             while let Some(msg) = reader.next().await {
                 match msg {
                     Ok(WsMessage::Binary(bytes)) => {
-                        if let Ok(WireFrame::Message(m)) =
-                            bincode::deserialize::<WireFrame>(&bytes)
+                        if bytes.len()
+                            <= tpt_av_sync_utils::security::MAX_WIRE_MESSAGE_BYTES
                         {
-                            if inbound.send((peer, m)).is_err() {
-                                break;
+                            if let Ok(WireFrame::Message(m)) =
+                                wire::decode::<WireFrame>(&bytes)
+                            {
+                                if inbound.send((peer, m)).is_err() {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -213,6 +271,38 @@ impl WebsocketTransport {
         self.inner.local
     }
 
+    /// Serves in authenticated mode: presents an Ed25519 identity proof,
+    /// answers liveness challenges, and requires valid remote identities.
+    /// The local peer id derives from the key. Dial handles cloned from
+    /// this transport authenticate with [`Self::connect_authenticated`].
+    pub fn serve_authenticated(
+        bind: SocketAddr,
+        local_identity: Arc<PeerIdentity>,
+    ) -> Result<(Self, SocketAddr), SyncError> {
+        let (transport, addr) = Self::serve(bind, local_identity.peer_id())?;
+        *transport.inner.identity.lock().expect("identity lock") = Some(local_identity);
+        transport
+            .inner
+            .require_remote_identity
+            .store(true, Ordering::Relaxed);
+        Ok((transport, addr))
+    }
+
+    /// Dials in authenticated mode: this handle (and any sharing its
+    /// state) presents the given identity and requires a valid remote
+    /// identity.
+    pub fn connect_authenticated(
+        &self,
+        url: &str,
+        local_identity: Arc<PeerIdentity>,
+    ) -> Result<PeerId, SyncError> {
+        *self.inner.identity.lock().expect("identity lock") = Some(local_identity);
+        self.inner
+            .require_remote_identity
+            .store(true, Ordering::Relaxed);
+        self.connect(url)
+    }
+
     /// The listening address, when serving.
     #[must_use]
     pub fn listen_addr(&self) -> Option<SocketAddr> {
@@ -221,7 +311,7 @@ impl WebsocketTransport {
 
     fn send_frame(&self, peer: PeerId, frame: &WireFrame) -> Result<(), SyncError> {
         let bytes =
-            bincode::serialize(frame).map_err(|e| SyncError::serialization(e.to_string()))?;
+            wire::encode(frame).map_err(|e| SyncError::serialization(e.to_string()))?;
         let conn = self
             .inner
             .peers
@@ -233,6 +323,41 @@ impl WebsocketTransport {
         conn.tx
             .send(bytes)
             .map_err(|_| SyncError::transport("peer write channel closed"))
+    }
+}
+
+impl WsInner {
+    fn identity(&self) -> Option<Arc<PeerIdentity>> {
+        self.identity.lock().expect("identity lock").clone()
+    }
+
+    fn requires_remote_identity(&self) -> bool {
+        self.require_remote_identity.load(Ordering::Relaxed)
+    }
+
+    /// Validates a remote `Hello` (protocol + identity policy).
+    fn verify_remote_hello(
+        require_identity: bool,
+        protocol: u16,
+        claimed: PeerId,
+        remote_identity: Option<PeerIdentityProof>,
+    ) -> Result<(), SyncError> {
+        if protocol != PROTOCOL_VERSION {
+            return Err(SyncError::transport(format!(
+                "protocol mismatch: peer speaks v{protocol}, we speak v{PROTOCOL_VERSION}"
+            )));
+        }
+        match (require_identity, remote_identity) {
+            (_, Some(proof)) => proof
+                .verify(claimed)
+                .map_err(|err: IdentityError| {
+                    SyncError::transport(format!("peer identity rejected: {err}"))
+                }),
+            (false, None) => Ok(()),
+            (true, None) => Err(SyncError::transport(
+                "peer did not present an identity (authenticated mode)",
+            )),
+        }
     }
 }
 

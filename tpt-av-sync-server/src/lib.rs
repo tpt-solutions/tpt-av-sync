@@ -13,10 +13,12 @@
 
 #![deny(missing_docs)]
 
+pub mod limits;
 pub mod persistence;
 pub mod relay;
 pub mod signaling;
 
-pub use persistence::SessionStore;
-pub use relay::{RelayClientTransport, RelayFrame, RelayServer};
+pub use limits::{ConnectionGuard, ServerLimits, TokenBucket};
+pub use persistence::{SessionStore, StoreLimits};
+pub use relay::{RelayClientTransport, RelayFrame, RelayJoinProof, RelayServer, RoomAuth};
 pub use signaling::{SignalFrame, SignalPayload, SignalingServer};

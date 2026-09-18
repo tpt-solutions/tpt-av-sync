@@ -15,7 +15,9 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tpt_av_sync_utils::{PeerId, SyncError};
+use tpt_av_sync_utils::identity::IdentityError;
+use tpt_av_sync_utils::wire::Signature64;
+use tpt_av_sync_utils::{PeerId, PeerIdentity, PeerIdentityProof, SyncError, wire};
 
 use crate::SyncMessage;
 
@@ -29,6 +31,11 @@ struct PeerConn {
 
 struct Inner {
     local: PeerId,
+    /// Some => authenticated mode: this side presents a proof, challenges
+    /// the remote, and (when `require_remote_identity`) demands one back.
+    /// Interior-mutable so dial-side handles can attach an identity.
+    identity: std::sync::Mutex<Option<Arc<PeerIdentity>>>,
+    require_remote_identity: AtomicBool,
     peers: Mutex<HashMap<PeerId, Arc<PeerConn>>>,
     inbox: Mutex<mpsc::Receiver<(PeerId, SyncMessage)>>,
     inbound_tx: mpsc::Sender<(PeerId, SyncMessage)>,
@@ -49,7 +56,9 @@ impl Inner {
                         }
                     }
                     Ok(Some(WireFrame::Goodbye)) | Ok(None) => break,
-                    Ok(Some(WireFrame::Hello { .. })) => continue,
+                    Ok(Some(WireFrame::Hello { .. }))
+                    | Ok(Some(WireFrame::Challenge { .. }))
+                    | Ok(Some(WireFrame::ChallengeResponse { .. })) => continue,
                     Err(SyncError::Timeout) => continue, // idle read timeout
                     Err(_) => break,
                 }
@@ -58,23 +67,129 @@ impl Inner {
         });
     }
 
+    fn hello_frame(&self) -> WireFrame {
+        // In authenticated mode the identity's derived id is authoritative.
+        let local = self
+            .identity()
+            .map(|id| id.peer_id())
+            .unwrap_or(self.local);
+        WireFrame::Hello {
+            peer_id: local,
+            protocol: PROTOCOL_VERSION,
+            identity: self.identity().as_ref().map(|id| id.hello_proof()),
+        }
+    }
+
+    fn identity(&self) -> Option<Arc<PeerIdentity>> {
+        self.identity
+            .lock()
+            .expect("identity lock")
+            .clone()
+    }
+
+    fn requires_remote_identity(&self) -> bool {
+        self.require_remote_identity
+            .load(Ordering::Relaxed)
+    }
+
+    /// Validates the remote `Hello`: protocol version, and — in
+    /// authenticated mode — the ownership proof. Returns the remote peer id
+    /// (authoritative when a proof is presented).
+    fn verify_remote_hello(
+        &self,
+        protocol: u16,
+        claimed: PeerId,
+        remote_identity: Option<PeerIdentityProof>,
+    ) -> Result<PeerId, SyncError> {
+        if protocol != PROTOCOL_VERSION {
+            return Err(SyncError::transport(format!(
+                "protocol mismatch: peer speaks v{protocol}, we speak v{PROTOCOL_VERSION}"
+            )));
+        }
+        match (self.requires_remote_identity(), remote_identity) {
+            (_, Some(proof)) => {
+                proof.verify(claimed).map_err(|err| match err {
+                    IdentityError::PeerIdMismatch | IdentityError::Malformed => {
+                        SyncError::transport(format!("peer identity rejected: {err}"))
+                    }
+                    IdentityError::BadSignature => {
+                        SyncError::transport("peer identity rejected: bad signature")
+                    }
+                })?;
+                Ok(claimed)
+            }
+            (false, None) => Ok(claimed),
+            (true, None) => Err(SyncError::transport(
+                "peer did not present an identity (authenticated mode)",
+            )),
+        }
+    }
+
+    /// Issues a liveness challenge to a remote that presented an identity.
+    fn challenge_and_verify(
+        &self,
+        stream: &mut TcpStream,
+        remote_proof: &PeerIdentityProof,
+    ) -> Result<(), SyncError> {
+        let nonce = tpt_av_sync_utils::random_nonce();
+        write_frame(stream, &WireFrame::Challenge { nonce })?;
+        match read_frame(stream)? {
+            Some(WireFrame::ChallengeResponse { signature }) => {
+                tpt_av_sync_utils::identity::verify_challenge_response(
+                    remote_proof,
+                    &nonce,
+                    &signature.0,
+                )
+                .map_err(|_| SyncError::transport("challenge response rejected"))?;
+                Ok(())
+            }
+            _ => Err(SyncError::transport(
+                "expected challenge response during handshake",
+            )),
+        }
+    }
+
+    /// Answers the dialer's liveness challenge (authenticated acceptor).
+    fn answer_challenge(&self, stream: &mut TcpStream) -> Result<(), SyncError> {
+        match read_frame(stream)? {
+            Some(WireFrame::Challenge { nonce }) => {
+                let id = self
+                    .identity()
+                    .ok_or_else(|| SyncError::transport("challenged without an identity"))?;
+                write_frame(
+                    stream,
+                    &WireFrame::ChallengeResponse {
+                        signature: Signature64(id.sign_challenge(&nonce)),
+                    },
+                )
+            }
+            _ => Err(SyncError::transport("expected challenge during handshake")),
+        }
+    }
+
     /// Completes the server side of the handshake on an accepted socket
     /// and attaches it to the peer map.
     fn accept_incoming(inner: &Arc<Self>, stream: TcpStream) {
         let mut stream = stream;
         configure(&mut stream);
-        if write_frame(&mut stream, &WireFrame::Hello {
-            peer_id: inner.local,
-            protocol: PROTOCOL_VERSION,
-        })
-        .is_err()
-        {
+        if write_frame(&mut stream, &inner.hello_frame()).is_err() {
             return;
         }
-        let peer = match read_frame(&mut stream) {
-            Ok(Some(WireFrame::Hello { peer_id, .. })) => peer_id,
+        let remote = match read_frame(&mut stream) {
+            Ok(Some(WireFrame::Hello {
+                peer_id,
+                protocol,
+                identity,
+            })) => match inner.verify_remote_hello(protocol, peer_id, identity) {
+                Ok(peer) => (peer, identity),
+                Err(_) => return,
+            },
             _ => return,
         };
+        let (peer, remote_identity) = remote;
+        if remote_identity.is_some() && inner.answer_challenge(&mut stream).is_err() {
+            return;
+        }
         let writer = match stream.try_clone() {
             Ok(w) => w,
             Err(_) => return,
@@ -101,9 +216,30 @@ impl std::fmt::Debug for TcpTransport {
 }
 
 impl TcpTransport {
-    /// Starts listening for incoming peers. Returns the transport and the
+    /// Starts listening for incoming peers (anonymous mode: no identity
+    /// checks — fine for trusted LANs). Returns the transport and the
     /// bound address (useful when binding port 0).
     pub fn listen(bind: SocketAddr, local: PeerId) -> Result<(Self, SocketAddr), SyncError> {
+        Self::listen_with_identity(bind, local, None)
+    }
+
+    /// Starts listening in authenticated mode: the local identity presents
+    /// an Ed25519 proof, is challenged for liveness, and every remote must
+    /// present a valid identity of its own. The local peer id is derived
+    /// from the identity's key.
+    pub fn listen_authenticated(
+        bind: SocketAddr,
+        identity: Arc<PeerIdentity>,
+    ) -> Result<(Self, SocketAddr), SyncError> {
+        let local = identity.peer_id();
+        Self::listen_with_identity(bind, local, Some(identity))
+    }
+
+    fn listen_with_identity(
+        bind: SocketAddr,
+        local: PeerId,
+        identity: Option<Arc<PeerIdentity>>,
+    ) -> Result<(Self, SocketAddr), SyncError> {
         let listener =
             TcpListener::bind(bind).map_err(|e| SyncError::transport(format!("bind {bind}: {e}")))?;
         listener
@@ -113,9 +249,12 @@ impl TcpTransport {
             .local_addr()
             .map_err(|e| SyncError::transport(e.to_string()))?;
 
+        let require = identity.is_some();
         let (tx, rx) = mpsc::channel();
         let inner = Arc::new(Inner {
             local,
+            require_remote_identity: AtomicBool::new(require),
+            identity: std::sync::Mutex::new(identity),
             peers: Mutex::new(HashMap::new()),
             inbox: Mutex::new(rx),
             inbound_tx: tx,
@@ -139,20 +278,50 @@ impl TcpTransport {
         Ok((Self { inner }, addr))
     }
 
-    /// Connects to a listening peer. Returns the remote peer's id.
+    /// Connects to a listening peer (anonymous mode). Returns the remote
+    /// peer's id.
     pub fn connect(&self, addr: SocketAddr) -> Result<PeerId, SyncError> {
+        self.dial(addr)
+    }
+
+    /// Connects in authenticated mode: this transport must have been built
+    /// with [`listen_authenticated`]-grade identity (see
+    /// [`TcpTransport::with_identity`]); the remote must present a valid
+    /// identity and answer a liveness challenge.
+    pub fn connect_authenticated(
+        &self,
+        addr: SocketAddr,
+        identity: Arc<PeerIdentity>,
+    ) -> Result<PeerId, SyncError> {
+        *self.inner.identity.lock().expect("identity lock") = Some(identity);
+        self.inner
+            .require_remote_identity
+            .store(true, Ordering::Relaxed);
+        self.dial(addr)
+    }
+
+    fn dial(&self, addr: SocketAddr) -> Result<PeerId, SyncError> {
         let mut stream =
             TcpStream::connect_timeout(&addr, Duration::from_secs(5))
                 .map_err(|e| SyncError::transport(format!("connect {addr}: {e}")))?;
         configure(&mut stream);
-        write_frame(&mut stream, &WireFrame::Hello {
-            peer_id: self.inner.local,
-            protocol: PROTOCOL_VERSION,
-        })?;
-        let peer = match read_frame(&mut stream)? {
-            Some(WireFrame::Hello { peer_id, .. }) => peer_id,
+        write_frame(&mut stream, &self.inner.hello_frame())?;
+        let remote = match read_frame(&mut stream)? {
+            Some(WireFrame::Hello {
+                peer_id,
+                protocol,
+                identity,
+            }) => self
+                .inner
+                .verify_remote_hello(protocol, peer_id, identity)
+                .map(|peer| (peer, identity))?,
             _ => return Err(SyncError::transport("expected Hello handshake")),
         };
+        let (peer, remote_identity) = remote;
+        if let Some(proof) = remote_identity {
+            // The remote authenticated: prove it is live before trusting it.
+            self.inner.challenge_and_verify(&mut stream, &proof)?;
+        }
         let writer = stream
             .try_clone()
             .map_err(|e| SyncError::transport(e.to_string()))?;
@@ -268,7 +437,7 @@ fn configure(stream: &mut TcpStream) {
 
 fn write_frame(stream: &mut TcpStream, frame: &WireFrame) -> Result<(), SyncError> {
     let bytes =
-        bincode::serialize(frame).map_err(|e| SyncError::serialization(e.to_string()))?;
+        wire::encode(frame).map_err(|e| SyncError::serialization(e.to_string()))?;
     let len = u32::try_from(bytes.len()).map_err(|_| SyncError::transport("frame too large"))?;
     stream
         .write_all(&len.to_be_bytes())
@@ -300,7 +469,7 @@ fn read_frame(stream: &mut TcpStream) -> Result<Option<WireFrame>, SyncError> {
     stream
         .read_exact(&mut buf)
         .map_err(|e| SyncError::transport(e.to_string()))?;
-    bincode::deserialize(&buf)
+    tpt_av_sync_utils::security::bounded_decode(&buf, MAX_FRAME_BYTES as usize)
         .map(Some)
         .map_err(|e| SyncError::serialization(e.to_string()))
 }

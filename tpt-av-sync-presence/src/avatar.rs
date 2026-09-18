@@ -87,6 +87,7 @@ impl AvatarData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tpt_av_sync_utils::wire;
 
     #[test]
     fn color_pack_roundtrip() {
@@ -98,8 +99,8 @@ mod tests {
     #[test]
     fn avatar_kinds_serialize() {
         let data = AvatarData::from_png(vec![1, 2, 3], Color::rgb(255, 0, 0));
-        let bytes = bincode::serialize(&data).unwrap();
-        let back: AvatarData = bincode::deserialize(&bytes).unwrap();
+        let bytes = wire::encode(&data).unwrap();
+        let back: AvatarData = wire::decode(&bytes).unwrap();
         assert_eq!(back, data);
     }
 }

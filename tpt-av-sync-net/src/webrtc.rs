@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use tpt_av_sync_utils::{PeerId, SyncError};
+use tpt_av_sync_utils::{PeerId, SyncError, wire};
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::APIBuilder;
@@ -401,15 +401,6 @@ impl WebRtcTransport {
             })
         }));
 
-        let ice_inner = self.inner.clone();
-        let ice_peer = peer;
-        pc.on_ice_connection_state_change(Box::new(move |state| {
-            let inner = ice_inner.clone();
-            Box::pin(async move {
-                let _ = inner;
-            })
-        }));
-
         let state_inner = self.inner.clone();
         pc.on_peer_connection_state_change(Box::new(move |state: RTCPeerConnectionState| {
             let inner = state_inner.clone();
@@ -473,7 +464,7 @@ impl WebRtcTransport {
         conn: &Arc<PeerConn>,
         frame: &WireFrame,
     ) -> Result<(), SyncError> {
-        let bytes = bincode::serialize(frame)
+        let bytes = wire::encode(frame)
             .map_err(|e| SyncError::serialization(e.to_string()))?;
         if !conn.open.load(AtomicOrdering::Relaxed) {
             conn.pending_writes.lock().expect("writes lock").push(bytes);
@@ -517,10 +508,10 @@ impl WrtcInner {
     }
 
     fn dispatch_frame(&self, peer: PeerId, msg: &DataChannelMessage) {
-        if msg.data.len() > 16 * 1024 * 1024 {
+        if msg.data.len() > tpt_av_sync_utils::security::MAX_WIRE_MESSAGE_BYTES {
             return;
         }
-        if let Ok(WireFrame::Message(message)) = bincode::deserialize::<WireFrame>(&msg.data) {
+        if let Ok(WireFrame::Message(message)) = wire::decode::<WireFrame>(&msg.data) {
             let _ = self.inbound_tx.send((peer, message));
         }
     }

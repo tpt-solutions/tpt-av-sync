@@ -51,6 +51,7 @@ impl CursorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tpt_av_sync_utils::wire;
 
     #[test]
     fn builder_chain_and_serde() {
@@ -62,8 +63,8 @@ mod tests {
         assert_eq!(cursor.selection, Some((0, 960)));
         assert_eq!(cursor.focused_clip, Some(ClipId::from_u64(7)));
 
-        let bytes = bincode::serialize(&cursor).unwrap();
-        let back: CursorState = bincode::deserialize(&bytes).unwrap();
+        let bytes = wire::encode(&cursor).unwrap();
+        let back: CursorState = wire::decode(&bytes).unwrap();
         assert_eq!(back, cursor);
     }
 }

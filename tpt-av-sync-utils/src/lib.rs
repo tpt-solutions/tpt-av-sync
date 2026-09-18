@@ -26,11 +26,18 @@
 
 pub mod clock;
 pub mod error;
+pub mod identity;
 pub mod operation_id;
 pub mod peer_id;
+pub mod security;
 pub mod time;
+pub mod wire;
 
 pub use clock::{LamportClock, VectorClock};
+pub use identity::{
+    derive_peer_id, random_nonce, room_token_proof, IdentityError, PeerIdentity,
+    PeerIdentityProof, NONCE_LEN,
+};
 pub use error::SyncError;
 pub use operation_id::OperationId;
 pub use peer_id::PeerId;

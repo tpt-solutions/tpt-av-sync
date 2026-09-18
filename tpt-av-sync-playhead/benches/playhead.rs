@@ -8,7 +8,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_main, Criterion};
 use tpt_av_sync_playhead::sync::ClockFn;
 use tpt_av_sync_playhead::PlayheadSync;
 use tpt_av_sync_utils::PeerId;
@@ -25,7 +25,7 @@ fn bench_hot_path(c: &mut Criterion) {
     let mut sync = PlayheadSync::with_clock(PeerId::from_u64(1), 48_000, clock);
     let master = PeerId::from_u64(2);
     sync.follow_master(master);
-    sync.clock.observe(7.5, 12.0);
+    sync.observe_clock_sample(7.5, 12.0, 1_000.0);
     sync.receive_update(&tpt_av_sync_playhead::PlayheadUpdate {
         peer_id: master,
         position: 480_000,
@@ -64,5 +64,9 @@ fn bench_clock_sync(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_hot_path, bench_clock_sync);
+#[allow(missing_docs)]
+mod bench_group {
+    criterion::criterion_group!(benches, super::bench_hot_path, super::bench_clock_sync);
+}
+use bench_group::benches;
 criterion_main!(benches);
