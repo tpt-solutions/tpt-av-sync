@@ -16,7 +16,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tpt-solutions/tpt-av-sync"
 rust-version = "1.75"
-authors = ["TPT Solutions Open Source <opensource@tptsolutions.co.nz>"]
+authors = ["TPT Solutions"]
 
 [workspace.dependencies]
 # Internal crates.
