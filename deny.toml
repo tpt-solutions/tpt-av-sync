@@ -51,7 +51,17 @@ highlight = "all"
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+ignore = [
+    # bincode 1.x/2.x: team ceased development after a doxxing/harassment
+    # incident. No safe upgrade exists (only alternative is a different
+    # wire format entirely); bincode 2.0.1 is otherwise functionally
+    # complete and is what this workspace's wire format is built on.
+    "RUSTSEC-2025-0141",
+    # rustls-pemfile: archived upstream in favor of rustls-pki-types'
+    # PemObject trait. No safe drop-in upgrade; only used at TLS identity
+    # load time (PEM parsing), not on any hot or untrusted-input path.
+    "RUSTSEC-2025-0134",
+]
 
 [sources]
 unknown-registry = "warn"

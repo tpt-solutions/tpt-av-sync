@@ -123,10 +123,9 @@ impl SyncEngine {
         &self.crdt
     }
 
-    /// Mutable access to the CRDT (e.g. for undo/redo; note that undo/redo
-    /// apply through [`TimelineCrdt::apply_local`] and are *not*
-    /// broadcast — broadcast [`SyncEvent`]s cover only engine flows; call
-    /// [`Self::broadcast_log_tail`] after direct CRDT mutation).
+    /// Mutable access to the CRDT (e.g. for undo/redo). Mutations made
+    /// through this handle are *not* broadcast to peers — only operations
+    /// applied via [`Self::apply_local`] are sent and tracked for acks.
     #[must_use]
     pub const fn crdt_mut(&mut self) -> &mut TimelineCrdt {
         &mut self.crdt

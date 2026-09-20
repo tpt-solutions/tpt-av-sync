@@ -284,10 +284,9 @@ impl TcpTransport {
         self.dial(addr)
     }
 
-    /// Connects in authenticated mode: this transport must have been built
-    /// with [`listen_authenticated`]-grade identity (see
-    /// [`TcpTransport::with_identity`]); the remote must present a valid
-    /// identity and answer a liveness challenge.
+    /// Connects in authenticated mode: the peer accepted via
+    /// [`TcpTransport::listen_authenticated`] must present a valid identity
+    /// and answer a liveness challenge.
     pub fn connect_authenticated(
         &self,
         addr: SocketAddr,

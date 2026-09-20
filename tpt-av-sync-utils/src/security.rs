@@ -133,9 +133,6 @@ mod tests {
         assert!(decode_message::<Vec<u64>>(&bytes).is_ok());
     }
 
-    #[test]
-    fn limit_constants_are_sane() {
-        assert!(MAX_STRING_BYTES < MAX_WIRE_MESSAGE_BYTES);
-        assert!(MAX_ENVELOPE_POINTS > 0);
-    }
+    const _: () = assert!(MAX_STRING_BYTES < MAX_WIRE_MESSAGE_BYTES);
+    const _: () = assert!(MAX_ENVELOPE_POINTS > 0);
 }

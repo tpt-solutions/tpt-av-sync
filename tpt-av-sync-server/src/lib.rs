@@ -5,7 +5,7 @@
 //! - [`signaling`] — WebRTC SDP/ICE exchange for peers that cannot reach
 //!   each other directly. Frames are JSON (easy to bridge from browsers).
 //! - [`relay`] — a message relay for sync traffic (`SyncMessage`s routed
-//!   by room), plus a client-side [`RelayTransport`] implementing
+//!   by room), plus a client-side [`relay::RelayClientTransport`] implementing
 //!   [`Transport`](tpt_av_sync_net::Transport) so the engine can run
 //!   entirely through the server when peer-to-peer fails.
 //! - [`persistence`] — optional on-disk session history: operations are

@@ -23,8 +23,8 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
   - [x] `cargo test --workspace`
   - [x] `cargo clippy --workspace -- -D warnings`
   - [x] `cargo deny check`
-- [ ] `DESIGN.md` (carry over spec.txt as living design doc)
-- [ ] `.gitignore` for Rust (`/target`, etc.)
+- [x] `DESIGN.md` (carry over spec.txt as living design doc)
+- [x] `.gitignore` for Rust (`/target`, etc.)
 
 ---
 
@@ -163,9 +163,9 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
 
 ## Phase 6 — Release Readiness
 
-- [ ] Full `cargo doc` coverage for every public type across all crates
-- [ ] Per-crate README polish
-- [ ] Top-level usage guide / getting-started docs
+- [x] Full `cargo doc` coverage for every public type across all crates (`#![warn(missing_docs)]` in every crate's `lib.rs`, clean)
+- [x] Per-crate README polish
+- [x] Top-level usage guide / getting-started docs (`docs/USAGE.md`)
 - [ ] End-to-end demo: 2+ peers collaboratively editing the same timeline live
 - [x] Fuzz/stress testing for CRDT merge edge cases
 - [ ] Version bump to 1.0.0-ready across workspace
@@ -184,39 +184,38 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
 
 Findings from a security recon pass: no transport encryption on TCP/WebSocket (plaintext bincode), no peer authentication anywhere (`PeerId` is self-asserted in every handshake and in the relay/signaling server's per-frame `from` field), no rate limiting/connection caps, unbounded per-room op-log growth, bincode deserializing untrusted bytes with no size guard beyond the flat 64 MiB frame cap, and WebRTC signaling leans on a public Google STUN server (leaks participant IPs). Land in this order — each step is independently testable:
 
-- [ ] **B1 — Bounded deserialization + field validation** (no protocol changes)
-  - [ ] `tpt_av_sync_utils::security::bounded_deserialize<T>` using bincode's `Options::with_limit`
-  - [ ] Replace direct `bincode::deserialize` calls in `tcp.rs`, `websocket.rs`, `webrtc.rs`, `relay.rs`, `signaling.rs`, `persistence.rs`
-  - [ ] `TimelineOperation::validate()` in `operation.rs` (max string lengths, max envelope-point count)
-  - [ ] Call `validate()` from `SyncEngine`'s inbound path (`engine.rs`) and from `relay.rs` before forwarding/persisting
-  - [ ] Reject-path tests (oversized field, oversized frame)
-- [ ] **B2 — Bounded persistence** (`persistence.rs`)
-  - [ ] `SessionStore::open_with_limits(dir, max_bytes_per_room, max_ops_per_room)`
-  - [ ] v1: size-triggered truncate/rotate
-  - [ ] v2 (optional): compaction via `TimelineSnapshot::from_ops` replay
-- [ ] **B3 — Relay/signaling connection caps, rate limiting, Origin check**
-  - [ ] Global + per-IP connection caps; per-room member caps
-  - [ ] Hand-rolled per-connection token-bucket rate limit
-  - [ ] `Origin` header allowlist check (no-op for LAN mode)
-- [ ] **B4 — Transport encryption (TLS/wss)**
-  - [ ] `TransportSecurity`/`TlsConfig` types in `tpt_av_sync_utils::security`
-  - [ ] `tcp.rs`: wrap blocking `TcpStream` with `rustls::{ServerConnection, ClientConnection}`
-  - [ ] `websocket.rs`: manual TCP dial/accept + `tokio-rustls` wrap + `tokio_tungstenite::{client_async, accept_async}` for `wss://`
-  - [ ] Secure-by-default wrappers over existing `listen`/`connect`/`serve`, self-signed cert via `rcgen` + TOFU fingerprint pinning
-  - [ ] Explicit loudly-named plaintext opt-outs (`listen_plaintext_insecure`, etc.) with warning logs
-  - [ ] `TlsConfig::Loaded` path for real CA certs (public deployment)
-  - [ ] Add workspace deps: `tokio-rustls`, `rustls-pemfile`, `rcgen`; pin `rustls` to match `webrtc`'s transitive version
-- [ ] **B5 — Peer authentication (keypair identity)**
-  - [ ] `PeerIdentity` (Ed25519) in `tpt_av_sync_utils::security`; `PeerId` derived from public key
-  - [ ] Bump `PROTOCOL_VERSION` to 2 and enforce it (currently ignored)
-  - [ ] Challenge/response handshake (nonce + signature) in `message.rs`/`tcp.rs`/`websocket.rs`
-  - [ ] Add workspace dep: `ed25519-dalek`
-- [ ] **B6 — Room authorization (shared token, bound peer identity)**
-  - [ ] `RoomToken` verified via keyed hash (not raw passphrase over the wire)
-  - [ ] `Join{room, token_proof, verifying_key}` first-frame requirement in `relay.rs`/`signaling.rs`
-  - [ ] Bind peer_id to connection server-side; stop trusting client-supplied `from` on subsequent frames
-  - [ ] `RoomAuth::Open` explicit opt-out for LAN/trusted use
-- [ ] Re-run `cargo deny check` after new deps land
+- [x] **B1 — Bounded deserialization + field validation** (no protocol changes)
+  - [x] `tpt_av_sync_utils::security::bounded_decode<T>` (byte-limit check before `wire::decode`)
+  - [x] Replace direct `bincode::deserialize` calls in `tcp.rs`, `websocket.rs`, `webrtc.rs`, `relay.rs`, `signaling.rs`, `persistence.rs`
+  - [x] `TimelineOperation::validate()` in `operation.rs` (max string lengths, max envelope-point count)
+  - [x] Call `validate()` from `SyncEngine`'s inbound path (`engine.rs`) and from `relay.rs` before forwarding/persisting
+  - [x] Reject-path tests (oversized field, oversized frame)
+- [x] **B2 — Bounded persistence** (`persistence.rs`)
+  - [x] `SessionStore::open_with_limits(dir, max_bytes_per_room, max_ops_per_room)`
+  - [x] v1: size-triggered truncate/rotate
+- [x] **B3 — Relay/signaling connection caps, rate limiting, Origin check**
+  - [x] Global + per-IP connection caps; per-room member caps (`limits.rs`)
+  - [x] Hand-rolled per-connection token-bucket rate limit
+  - [x] `Origin` header allowlist check (no-op for LAN mode)
+- [x] **B4 — Transport encryption (TLS/wss)**
+  - [x] `TlsIdentityConfig`/`TlsTrust` types in `tpt_av_sync_utils::security`; `tls.rs` in `tpt-av-sync-net`
+  - [x] `tcp.rs`: TLS-wrapped `TcpStream` via `rustls`
+  - [x] `websocket.rs`: `tokio-rustls` wrap + `tokio_tungstenite` for `wss://`
+  - [x] Secure-by-default wrappers over existing `listen`/`connect`/`serve`, self-signed cert via `rcgen` + TOFU fingerprint pinning
+  - [x] Explicit loudly-named plaintext opt-outs with warning logs
+  - [x] `TlsIdentityConfig::Pem` path for real CA certs (public deployment)
+  - [x] Add workspace deps: `tokio-rustls`, `rustls-pemfile`, `rcgen`; pin `rustls` to match `webrtc`'s transitive version
+- [x] **B5 — Peer authentication (keypair identity)**
+  - [x] `PeerIdentity` (Ed25519) in `tpt_av_sync_utils::identity`; `PeerId` derived from public key
+  - [x] Bump `PROTOCOL_VERSION` to 2 and enforce it
+  - [x] Challenge/response handshake (nonce + signature) in `message.rs`/`tcp.rs`/`websocket.rs`
+  - [x] Add workspace dep: `ed25519-dalek`
+- [x] **B6 — Room authorization (shared token, bound peer identity)**
+  - [x] Room token verified via keyed hash (`room_token_proof`, not a raw passphrase over the wire)
+  - [x] Join/token-proof + verifying-key first-frame requirement in `relay.rs`/`signaling.rs`
+  - [x] Bind peer_id to connection server-side; stop trusting client-supplied `from` on subsequent frames
+  - [x] `RoomAuth` open opt-out for LAN/trusted use
+- [x] Re-run `cargo deny check` after new deps land (advisories `RUSTSEC-2025-0141`, `RUSTSEC-2025-0134` — unmaintained, no safe upgrade — explicitly acknowledged in `deny.toml`)
 
 ---
 

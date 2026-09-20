@@ -65,7 +65,7 @@ pub fn derive_peer_id(verifying_key: &[u8; 32]) -> PeerId {
 pub struct PeerIdentityProof {
     /// Ed25519 verifying key.
     pub verifying_key: [u8; 32],
-    /// Signature over [`HELLO_CONTEXT`] `||` peer id, proving the sender
+    /// Signature over `HELLO_CONTEXT` `||` peer id, proving the sender
     /// controls `verifying_key` and that the key derives its claimed id.
     pub hello_signature: [u8; 64],
 }

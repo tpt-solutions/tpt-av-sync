@@ -157,6 +157,10 @@ impl RelayServer {
                     };
                     // Origin allowlist (empty list = LAN mode, allow all).
                     let allowed = task_inner.limits.allowed_origins.clone();
+                    // The `Err` variant's size is dictated by tungstenite's
+                    // `Callback` trait (`Response<Option<String>>`), not by
+                    // us; there's nothing here to box.
+                    #[allow(clippy::result_large_err)]
                     let ws = tokio_tungstenite::accept_hdr_async(
                         stream,
                         move |req: &Request, resp: Response| {

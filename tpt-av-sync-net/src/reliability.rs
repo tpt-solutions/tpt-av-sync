@@ -9,7 +9,7 @@ use tpt_av_sync_utils::{OperationId, PeerId};
 /// that go unacknowledged.
 ///
 /// The engine tracks broadcast operations until every peer has acked; an
-/// operation that times out is resent (up to [`Self::max_resends`]) and
+/// operation that times out is resent (up to the configured `max_resends`) and
 /// finally dropped from tracking. Thanks to CRDT idempotency, duplicate
 /// delivery is always safe.
 #[derive(Debug)]
@@ -65,7 +65,7 @@ impl ReliabilityManager {
     }
 
     /// Operations whose ack timed out: resends each (bumping attempt
-    /// counters) and drops entries that exhausted [`Self::max_resends`].
+    /// counters) and drops entries that exhausted `max_resends`.
     /// Also returns operations that were dropped for exceeding the budget.
     pub fn due_for_resend(&mut self, now_ms: u64) -> Vec<TaggedOperation> {
         let timeout = self.ack_timeout_ms;
