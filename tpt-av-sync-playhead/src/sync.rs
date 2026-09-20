@@ -45,7 +45,11 @@ struct RemoteTrack {
 /// [`set_local_position`](Self::set_local_position) and
 /// [`synchronized_position`](Self::synchronized_position) are the
 /// audio/render-thread hot path: both perform only arithmetic and a
-/// hash-map probe — no allocation, no locking, no syscalls.
+/// hash-map probe — no allocation, no locking, no syscalls. The struct
+/// holds no `Mutex`/`RwLock` (lock-freedom is structural), and zero-alloc
+/// is verified for every branch of both methods by
+/// `tests/realtime_safety.rs` (a counting global allocator, not just this
+/// doc comment).
 pub struct PlayheadSync {
     peer_id: PeerId,
     local_position: u64,

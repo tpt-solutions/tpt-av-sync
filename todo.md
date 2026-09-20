@@ -113,8 +113,8 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
   - [x] `generate_update() -> PlayheadUpdate`
   - [x] `process_clock_sync(message)`
 - [x] `transport.rs` (playhead) — transport control sync (play/stop/record) across peers
-- [ ] Real-time-safety audit: no heap allocation on `synchronized_position` / `set_local_position` hot path
-- [ ] Real-time-safety audit: no locking on hot path (lock-free data access)
+- [x] Real-time-safety audit: no heap allocation on `synchronized_position` / `set_local_position` hot path (verified with a counting global allocator in `tests/realtime_safety.rs`, every branch)
+- [x] Real-time-safety audit: no locking on hot path (lock-free data access — `PlayheadSync` holds no `Mutex`/`RwLock`; structural, confirmed by inspection)
 - [x] Benchmark: playhead sync precision (target sub-millisecond)
 - [x] Benchmark: clock drift correction under simulated jitter
 
