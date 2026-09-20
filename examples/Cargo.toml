@@ -32,5 +32,9 @@ path = "src/bin/presence_demo.rs"
 name = "offline_sync"
 path = "src/bin/offline_sync.rs"
 
+[[bin]]
+name = "end_to_end_demo"
+path = "src/bin/end_to_end_demo.rs"
+
 [lints]
 workspace = true

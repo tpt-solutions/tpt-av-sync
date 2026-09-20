@@ -166,7 +166,7 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
 - [x] Full `cargo doc` coverage for every public type across all crates (`#![warn(missing_docs)]` in every crate's `lib.rs`, clean)
 - [x] Per-crate README polish
 - [x] Top-level usage guide / getting-started docs (`docs/USAGE.md`)
-- [ ] End-to-end demo: 2+ peers collaboratively editing the same timeline live
+- [x] End-to-end demo: 2+ peers collaboratively editing the same timeline live (`examples/src/bin/end_to_end_demo.rs` — 3 peers over a real TCP mesh, join-in-progress, 3-way concurrent edits, live playhead tracking, and presence, all through one stack)
 - [x] Fuzz/stress testing for CRDT merge edge cases
 - [ ] Version bump to 1.0.0-ready across workspace
 - [ ] CHANGELOG.md
