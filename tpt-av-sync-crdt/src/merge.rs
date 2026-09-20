@@ -17,6 +17,7 @@
 //! | Concurrent splits of one clip | Split *points* merge as a set; segments are derived deterministically (spec §5.1: two splits → three clips). |
 //! | Same split offset, different new ids | The smaller clip id wins (deterministic, order-independent). |
 
+use crate::operation::ClipId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tpt_av_sync_utils::PeerId;
@@ -114,6 +115,68 @@ impl<T> LwwReg<T> {
     }
 }
 
+/// A structured record of how a conflict on a clip was resolved: which
+/// write won a *genuinely concurrent* move, delete, or split, and why.
+///
+/// "Concurrent" here means causally concurrent — neither operation's vector
+/// clock happened-before the other's — not merely "a different peer wrote
+/// this field previously". Sequential cross-peer edits (Alice creates a
+/// clip, Bob edits it after seeing that create) are the common case and are
+/// *not* conflicts; only two edits issued without knowledge of each other
+/// are. See [`crate::TimelineCrdt::take_resolution_events`], which does the
+/// concurrency check (it has the operation log to check against) and calls
+/// [`resolve_tag_conflict`] to decide the winner once concurrency is
+/// established.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolutionEvent {
+    /// What kind of conflict this is: `"move"`, `"delete"`, or `"split"`.
+    pub kind: &'static str,
+    /// The clip the conflict is about.
+    pub clip_id: ClipId,
+    /// The tag of the operation being applied when this conflict was
+    /// observed.
+    pub op: OpTag,
+    /// Whether `op` is the winner of the conflict (`false` means it lost
+    /// to the concurrent write already present, or to the other side of a
+    /// split tie).
+    pub op_won: bool,
+    /// One-line explanation of why, suitable for a UI or log line.
+    pub reason: &'static str,
+}
+
+impl fmt::Display for ResolutionEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} on clip {}: op {} {} — {}",
+            self.kind,
+            self.clip_id.as_u64(),
+            self.op,
+            if self.op_won { "won" } else { "lost" },
+            self.reason
+        )
+    }
+}
+
+/// Decides the winner between two tagged writes already known to be
+/// concurrent, and builds the [`ResolutionEvent`] describing it: the
+/// higher `(lamport, peer)` tag wins, exactly as [`LwwReg::set`] decides.
+#[must_use]
+pub fn resolve_tag_conflict(
+    kind: &'static str,
+    clip_id: ClipId,
+    previous: OpTag,
+    incoming: OpTag,
+) -> ResolutionEvent {
+    ResolutionEvent {
+        kind,
+        clip_id,
+        op: incoming,
+        op_won: incoming > previous,
+        reason: "higher (lamport, peer) tag wins",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +226,14 @@ mod tests {
     fn initial_tag_is_beaten_by_any_real_tag() {
         let mut reg = LwwReg::new_initial(0_u64);
         assert!(reg.set(1, OpTag::new(1, PeerId::from_u64(1))));
+    }
+
+    #[test]
+    fn resolve_tag_conflict_reports_the_actual_winner() {
+        let clip = ClipId::from_u64(1);
+        let winner = resolve_tag_conflict("move", clip, tag(3, 1), tag(5, 2));
+        assert!(winner.op_won, "higher lamport must win");
+        let loser = resolve_tag_conflict("move", clip, tag(9, 1), tag(5, 2));
+        assert!(!loser.op_won, "lower lamport must lose");
     }
 }

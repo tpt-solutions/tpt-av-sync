@@ -2,8 +2,8 @@
 //! and snapshots together.
 
 use crate::history::{compute_inverse, History, HistoryEntry};
-use crate::merge::OpTag;
-use crate::operation::{RequiredTarget, TaggedOperation, TimelineOperation};
+use crate::merge::{resolve_tag_conflict, OpTag, ResolutionEvent};
+use crate::operation::{ClipId, RequiredTarget, TaggedOperation, TimelineOperation};
 use crate::state::{Session, SessionView};
 use std::collections::HashSet;
 use std::time::SystemTime;
@@ -54,6 +54,7 @@ pub struct TimelineCrdt {
     local_peer_id: PeerId,
     pending: Vec<TaggedOperation>,
     history: History,
+    resolution_events: Vec<ResolutionEvent>,
 }
 
 impl TimelineCrdt {
@@ -69,6 +70,7 @@ impl TimelineCrdt {
             local_peer_id,
             pending: Vec::new(),
             history: History::new(256),
+            resolution_events: Vec::new(),
         }
     }
 
@@ -130,10 +132,9 @@ impl TimelineCrdt {
         self.seen.insert(tagged_op.op_id);
         self.operation_log.push(tagged_op.clone());
 
-        match self.session.apply(
-            &tagged_op.operation,
-            OpTag::new(tagged_op.lamport_ts, tagged_op.peer_id),
-        ) {
+        self.observe_resolution(&tagged_op);
+        let tag = OpTag::new(tagged_op.lamport_ts, tagged_op.peer_id);
+        match self.session.apply(&tagged_op.operation, tag) {
             Ok(()) => {}
             Err(SyncError::UnknownTarget { .. }) => {
                 self.pending.push(tagged_op);
@@ -173,6 +174,15 @@ impl TimelineCrdt {
     #[must_use]
     pub fn pending_len(&self) -> usize {
         self.pending.len()
+    }
+
+    /// Drains the queue of conflict-resolution events observed since the
+    /// last call: which write won a concurrent move, delete, or split, and
+    /// why. Empty most of the time — only genuinely contested edits (two
+    /// different peers touching the same clip) produce one. Intended for a
+    /// UI/log conflict visualizer; has no effect on CRDT state.
+    pub fn take_resolution_events(&mut self) -> Vec<ResolutionEvent> {
+        std::mem::take(&mut self.resolution_events)
     }
 
     /// Generates a snapshot of the current state (for new peers joining).
@@ -227,10 +237,14 @@ impl TimelineCrdt {
             timestamp: SystemTime::now(),
         };
 
-        match self
-            .session
-            .apply(&operation, OpTag::new(lamport, self.local_peer_id))
-        {
+        // Local edits are never flagged for `resolution_events`: the
+        // Lamport clock always ticks past everything this replica has
+        // already observed, so a local write can never lose to (or be
+        // concurrent with) state already in `self.session` — see
+        // `observe_resolution`, which only runs for incoming remote
+        // operations.
+        let tag = OpTag::new(lamport, self.local_peer_id);
+        match self.session.apply(&operation, tag) {
             Ok(()) => {
                 if let Some(inverse) = inverse {
                     self.history.record(HistoryEntry { forward: operation, inverse });
@@ -254,11 +268,10 @@ impl TimelineCrdt {
         loop {
             let mut progress = false;
             let mut still_waiting = Vec::new();
-            for op in self.pending.drain(..) {
-                match self.session.apply(
-                    &op.operation,
-                    OpTag::new(op.lamport_ts, op.peer_id),
-                ) {
+            for op in std::mem::take(&mut self.pending) {
+                self.observe_resolution(&op);
+                let tag = OpTag::new(op.lamport_ts, op.peer_id);
+                match self.session.apply(&op.operation, tag) {
                     Ok(()) => progress = true,
                     Err(SyncError::UnknownTarget { .. }) => still_waiting.push(op),
                     Err(_) => unreachable!("Session::apply only returns UnknownTarget"),
@@ -269,6 +282,75 @@ impl TimelineCrdt {
                 break;
             }
         }
+    }
+
+    /// Checks whether `incoming` (an operation about to be applied, already
+    /// present in `operation_log`) is genuinely concurrent with an earlier
+    /// move/delete/split on the same clip, and if so records a
+    /// [`ResolutionEvent`]. "Concurrent" is checked with vector clocks, not
+    /// by comparing tags: two edits where one causally follows the other
+    /// (the ordinary case — Bob edits a clip Alice created, after seeing
+    /// her create it) are not a conflict, no matter how many peers have
+    /// touched the clip. Only used for remote/pending application: a local
+    /// edit's Lamport tick always dominates everything the replica has
+    /// already observed, so it can never be concurrent with existing state.
+    fn observe_resolution(&mut self, incoming: &TaggedOperation) {
+        let (kind, clip_id) = match &incoming.operation {
+            TimelineOperation::MoveClip { clip_id, .. } => ("move", *clip_id),
+            TimelineOperation::DeleteClip { clip_id } => ("delete", *clip_id),
+            TimelineOperation::SplitClip { clip_id, .. } => ("split", *clip_id),
+            _ => return,
+        };
+
+        let already_logged = self.operation_log.len().saturating_sub(1);
+        let Some(prior) = self.operation_log[..already_logged]
+            .iter()
+            .rev()
+            .find(|op| op.op_id != incoming.op_id && matches_conflict_class(&op.operation, kind, clip_id))
+            .cloned()
+        else {
+            return;
+        };
+        if !incoming.vector_clock.is_concurrent(&prior.vector_clock) {
+            return; // one causally follows the other: not a conflict.
+        }
+
+        let incoming_tag = OpTag::new(incoming.lamport_ts, incoming.peer_id);
+        let prior_tag = OpTag::new(prior.lamport_ts, prior.peer_id);
+
+        let event = if kind == "split" {
+            let (TimelineOperation::SplitClip { new_clip_id: incoming_new, split_frame: incoming_frame, .. },
+                 TimelineOperation::SplitClip { new_clip_id: prior_new, split_frame: prior_frame, .. }) =
+                (&incoming.operation, &prior.operation)
+            else {
+                unreachable!("matches_conflict_class guarantees SplitClip for kind \"split\"");
+            };
+            if incoming_frame != prior_frame || incoming_new == prior_new {
+                return; // different split point, or the same proposal: no conflict.
+            }
+            ResolutionEvent {
+                kind,
+                clip_id,
+                op: incoming_tag,
+                op_won: incoming_new < prior_new,
+                reason: "same split point, smaller clip id wins",
+            }
+        } else {
+            resolve_tag_conflict(kind, clip_id, prior_tag, incoming_tag)
+        };
+        self.resolution_events.push(event);
+    }
+}
+
+/// Whether `op` is the same conflict class (kind + target clip) as the one
+/// being checked — used by [`TimelineCrdt::observe_resolution`] to find the
+/// most recent prior operation to compare against.
+fn matches_conflict_class(op: &TimelineOperation, kind: &str, clip_id: ClipId) -> bool {
+    match (op, kind) {
+        (TimelineOperation::MoveClip { clip_id: c, .. }, "move")
+        | (TimelineOperation::DeleteClip { clip_id: c }, "delete")
+        | (TimelineOperation::SplitClip { clip_id: c, .. }, "split") => *c == clip_id,
+        _ => false,
     }
 }
 

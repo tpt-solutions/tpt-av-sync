@@ -36,5 +36,9 @@ path = "src/bin/offline_sync.rs"
 name = "end_to_end_demo"
 path = "src/bin/end_to_end_demo.rs"
 
+[[bin]]
+name = "merge_visualizer"
+path = "src/bin/merge_visualizer.rs"
+
 [lints]
 workspace = true

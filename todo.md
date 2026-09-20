@@ -221,8 +221,8 @@ Findings from a security recon pass: no transport encryption on TCP/WebSocket (p
 
 ## Phase 8 — Innovative Features
 
-- [ ] Session recording & replay: record full tagged-op log, replay at controllable speed/to a target timestamp via `TimelineCrdt::apply_remote` (build on `history.rs`/`persistence.rs`/`TimelineSnapshot`)
-- [ ] Conflict/merge visualizer: emit a structured "resolution event" from `merge.rs` (which op won a concurrent move/delete/split and why); surface it in `examples/collaborative_editor.rs` or a new example
+- [x] Session recording & replay: `tpt-av-sync-crdt/src/replay.rs` — `SessionRecording` wraps a recorded `Vec<TaggedOperation>` (from `operation_log()` or a `SessionStore`), replays via `TimelineCrdt::apply_remote` at `ReplaySpeed::Instant` or `Realtime(factor)`, and supports `replay_until(cutoff)` for a target timestamp
+- [x] Conflict/merge visualizer: `merge.rs` — `ResolutionEvent` + `resolve_tag_conflict`; `TimelineCrdt::take_resolution_events()` detects *genuine* concurrency (vector-clock based, not just "different peer") for move/delete/split and reports the winner and why; surfaced in the new `examples/merge_visualizer.rs`
 - [ ] Live session inspector/dashboard (TUI via `ratatui`): connected peers, presence state, playhead positions, op throughput — hook into `SyncEngine::process_messages`
 
 ---

@@ -48,6 +48,7 @@ pub mod envelope_crdt;
 pub mod history;
 pub mod merge;
 pub mod operation;
+pub mod replay;
 pub mod state;
 pub mod timeline_crdt;
 pub mod track_crdt;
@@ -56,12 +57,13 @@ pub use clip_crdt::{ClipCrdt, ClipParent};
 pub use delta::{apply_delta, compute_delta};
 pub use envelope_crdt::EnvelopeStore;
 pub use history::{compute_inverse, History, HistoryEntry};
-pub use merge::{LwwReg, OpTag};
+pub use merge::{resolve_tag_conflict, LwwReg, OpTag, ResolutionEvent};
 pub use operation::{
     ClipData, ClipId, ClipMetadataUpdate, EnvelopePoint, EnvelopeType, Interpolation,
     RequiredTarget, SessionMetadataUpdate, TaggedOperation, TargetId, TimelineOperation,
     TrackData, TrackId, TrackKind, TrackMetadataUpdate, TrimEdge,
 };
+pub use replay::{ReplaySpeed, SessionRecording};
 pub use state::{
     tag_for, ClipView, ResolvedClip, Session, SessionMetadata, SessionView, TrackView,
 };
