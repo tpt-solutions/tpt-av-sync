@@ -21,7 +21,7 @@ Status: pre-1.0 · Dual-licensed MIT OR Apache-2.0 · TPT Solutions Open Source
 ### Non-goals
 
 - **Media decoding/processing.** `tpt-audio` / `tpt-visual` own the media; this stack replicates *state about* media.
-- **Authentication/encryption.** A deployment concern; run transports over TLS or bring your own.
+- **Rolling your own crypto.** TLS transport, peer authentication, and room authorization are built in (§10) — a deployment still owns key/token distribution and network topology, but not the primitives.
 - **CRDT garbage collection.** Tombstones are retained for the session lifetime; GC of dead operation logs is future work.
 
 ---
@@ -187,13 +187,20 @@ Deterministic precision tests (`tests/precision.rs`) simulate jittered networks 
 
 ## 10. Security considerations
 
-- The engine trusts peers on the transport. Wire inputs are defensively decoded (frame length caps, `bincode` errors → `SyncError`), but authorization ("who may edit") belongs to the embedding application or transport layer.
-- The signaling/relay servers route opaque envelopes; they should be deployed behind TLS and an auth gate in any untrusted network.
-- Discovery beacons announce peer name/session/port on the LAN; suppress discovery when that is sensitive.
+Phase 7 landed transport security, peer authentication, and room authorization directly in the engine, in six independently-testable steps (`todo.md` §Phase 7 has the full breakdown):
+
+- **Bounded deserialization + field validation.** `tpt_av_sync_utils::security::bounded_decode`/`decode_message` refuse to decode an oversized frame before touching the buffer; `TimelineOperation::validate()` bounds string lengths and envelope-point counts, enforced on `SyncEngine`'s inbound path and by the relay before forwarding/persisting.
+- **Bounded persistence.** `SessionStore::open_with_limits` truncates/rotates a room's on-disk op-log past configured size/count limits — unbounded growth is no longer possible by default.
+- **Admission control.** `ConnectionGuard` (global/per-IP/per-room caps), a per-connection `TokenBucket` rate limit, and an `Origin` allowlist (empty = LAN mode) guard the relay/signaling servers.
+- **Transport encryption.** `tcp.rs`/`websocket.rs` support TLS-wrapped listen/connect via `rustls`, with self-signed certs + TOFU fingerprint pinning for LAN use or loaded PEM material for public deployment. Plaintext remains available through explicit, loudly-named opt-outs.
+- **Peer authentication.** `PeerIdentity` (Ed25519; `PeerId` is derived from the public key, not self-asserted) proves ownership via a hello signature and liveness via a nonce challenge/response. `PROTOCOL_VERSION` (2) is enforced, not ignored.
+- **Room authorization.** A room token never crosses the wire — only a keyed-hash proof (`room_token_proof`) does — and the relay/signaling servers bind a connection's peer id server-side from its first `Join` frame, rather than trusting a client-supplied `from` field on every subsequent frame. `RoomAuth::Open` is an explicit opt-out for LAN/trusted use.
+
+Deployment still owns key distribution, room-token distribution, and network topology — the engine gives you the primitives, not a PKI or a directory service. Discovery beacons still announce peer name/session/port on the LAN; suppress discovery when that is sensitive.
 
 ## 11. Path to 1.0
 
 - [ ] Snapshot compaction / operation GC (bounded memory for week-scale sessions).
-- [ ] Full vector-clock concurrency surfacing in the public API (currently internal).
+- [~] Vector-clock concurrency surfacing in the public API: `TimelineCrdt::take_resolution_events()` now reports genuine (vector-clock checked) concurrency for the three documented conflict classes — move, delete, split (`tpt-av-sync-crdt/src/merge.rs`, `ResolutionEvent`). Not yet generalized to every field (e.g. concurrent metadata-field writes aren't reported).
 - [ ] mDNS/DNS-SD responder option.
 - [ ] Long-run soak: 24 h simulated multi-peer session in CI.
