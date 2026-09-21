@@ -1,0 +1,7 @@
+[template]
+cargo_generate_version = ">=0.18.0"
+
+[placeholders.sample_rate]
+type = "string"
+prompt = "Audio sample rate (Hz), for playhead sync"
+default = "48000"

@@ -169,14 +169,14 @@ CRDT-based real-time collaboration engine for media timelines. Dual-licensed MIT
 - [x] End-to-end demo: 2+ peers collaboratively editing the same timeline live (`examples/src/bin/end_to_end_demo.rs` — 3 peers over a real TCP mesh, join-in-progress, 3-way concurrent edits, live playhead tracking, and presence, all through one stack)
 - [x] Fuzz/stress testing for CRDT merge edge cases
 - [ ] Version bump to 1.0.0-ready across workspace
-- [ ] CHANGELOG.md
+- [x] CHANGELOG.md
 - [ ] Publish `tpt-av-sync-utils` to crates.io
 - [ ] Publish `tpt-av-sync-crdt` to crates.io
 - [ ] Publish `tpt-av-sync-net` to crates.io
 - [ ] Publish `tpt-av-sync-playhead` to crates.io
 - [ ] Publish `tpt-av-sync-presence` to crates.io
 - [ ] Publish `tpt-av-sync-server` to crates.io (if stabilized)
-- [ ] Final `cargo-deny` + full dependency-tree license audit
+- [x] Final `cargo-deny` + full dependency-tree license audit (clean: `advisories ok, bans ok, licenses ok, sources ok`, incl. the new `tpt-av-sync-cli` crate's dependency tree)
 
 ---
 
@@ -229,6 +229,6 @@ Findings from a security recon pass: no transport encryption on TCP/WebSocket (p
 
 ## Phase 9 — Adoption Tooling
 
-- [ ] `cargo-generate` project template wiring `tpt-av-sync-{utils,crdt,net,playhead,presence}` with a minimal working `SyncEngine` setup
+- [x] `cargo-generate` project template wiring `tpt-av-sync-{utils,crdt,net,playhead,presence}` with a minimal working `SyncEngine` setup — `templates/minimal-sync-app/` (Rust source validated against the real API via a temporary path-dependency build; ships with `git`-dependency `Cargo.toml` since the crates aren't on crates.io yet)
 - [x] New `tpt-av-sync-cli` binary crate: `inspect`/`replay`/`dashboard`/`relay` subcommands — inspect/replay/dump a `SessionStore` op-log; run a local relay server for testing (reuses `RelayServer` directly)
 - [x] `Dockerfile` + `docker-compose.yml` for `tpt-av-sync-server` (relay/signaling ports + persistent volume for op-logs) — via `tpt-av-sync-cli`'s `relay`/`signaling` subcommands

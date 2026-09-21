@@ -10,6 +10,10 @@ members = [
     "tpt-av-sync-cli",
     "examples",
 ]
+# templates/minimal-sync-app is a cargo-generate template (its own
+# standalone Cargo.toml, with Liquid placeholders): never a workspace
+# member, regardless of what `cargo` might otherwise auto-detect.
+exclude = ["templates"]
 
 [workspace.package]
 version = "0.1.0"
