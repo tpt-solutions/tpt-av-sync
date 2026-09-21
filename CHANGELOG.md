@@ -46,6 +46,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added — Path to 1.0
 - `tpt_av_sync_crdt::compaction::compact` / `TimelineCrdt::compact()`: drops operations no longer needed to reconstruct current session state (found via exact `OperationId` lookup against each field's current LWW tag), bounding operation-log growth for long-running sessions. Splits are deliberately exempt (see the module doc). Covered by a 256-case property test plus targeted tombstone/split tests.
+- `tpt_av_sync_net::mdns_discovery::MdnsDiscovery` (feature `mdns`): a standard mDNS/DNS-SD responder implementing the same `Discovery` trait as the default UDP-beacon discoveries, for interop with non-`tpt-av-sync` mDNS tooling on the LAN. Fixed a latent bug found while auditing this area under `--all-features` clippy: `WrtcInner::on_channel_open`'s flush of queued writes constructed a `channel.send(...)` future and dropped it without awaiting it, so data queued while a WebRTC data channel was still opening was silently never sent.
 
 ### Added — Phase 8 (innovative features)
 - `tpt_av_sync_crdt::replay`: `SessionRecording` replays a recorded operation log through `TimelineCrdt::apply_remote`, instantly, at a scaled real-time pace, or only up to a target timestamp.

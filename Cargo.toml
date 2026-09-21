@@ -38,6 +38,7 @@ tokio-tungstenite = "0.21"
 futures-util = { version = "0.3", default-features = false }
 bytes = "1.6"
 socket2 = "0.5"
+mdns-sd = { version = "0.21", default-features = false }
 
 # Security (Phase 7).
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }

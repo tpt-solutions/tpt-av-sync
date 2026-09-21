@@ -16,6 +16,7 @@ default = ["websocket"]
 websocket = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 webrtc = ["dep:webrtc", "dep:tokio", "dep:futures-util", "dep:bytes"]
 tls = ["dep:rustls", "dep:tokio-rustls", "dep:rcgen", "dep:rustls-pemfile", "dep:tokio"]
+mdns = ["dep:mdns-sd"]
 
 [dependencies]
 tpt-av-sync-utils = { workspace = true }
@@ -34,6 +35,7 @@ rustls = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }
 rcgen = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
+mdns-sd = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -11,7 +11,9 @@
 //!   offline-first queue.
 //! - [`reliability`] — ack tracking and bounded resend.
 //! - [`batcher`] — fixed-interval operation batching.
-//! - [`discovery`] — UDP multicast/broadcast LAN beacons.
+//! - [`discovery`] — UDP multicast/broadcast LAN beacons, plus an optional
+//!   standard mDNS/DNS-SD responder (`mdns_discovery`, feature `mdns`) for
+//!   interop with non-`tpt-av-sync` mDNS tooling.
 //!
 //! ```no_run
 //! use std::net::SocketAddr;
@@ -45,6 +47,9 @@ pub mod reliability;
 pub mod tcp;
 pub mod transport;
 
+#[cfg(feature = "mdns")]
+pub mod mdns_discovery;
+
 #[cfg(feature = "webrtc")]
 pub mod webrtc;
 
@@ -57,6 +62,9 @@ pub use discovery::{
     DEFAULT_BROADCAST_ADDR, DEFAULT_MULTICAST_ADDR,
 };
 pub use engine::{EngineConfig, SyncEngine, SyncEvent};
+
+#[cfg(feature = "mdns")]
+pub use mdns_discovery::MdnsDiscovery;
 pub use message::{SyncMessage, WireFrame, PROTOCOL_VERSION};
 pub use offline::OfflineQueue;
 pub use peer::{PeerInfo, PeerRegistry};

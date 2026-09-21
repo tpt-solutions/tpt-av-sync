@@ -3,9 +3,11 @@
 //! Peers connect directly over ordered SCTP data channels — no server in
 //! the data path. Signaling (SDP offers/answers and ICE candidates) is
 //! surfaced to the application through [`SignalEnvelope`]s: the transport
-//! emits envelopes via [`take_outgoing_signal`](Self::take_outgoing_signal)
-//! and consumes delivered envelopes via
-//! [`handle_signal`](Self::handle_signal). Any out-of-band channel works —
+//! emits envelopes via
+//! [`take_outgoing_signal`](WebRtcTransport::take_outgoing_signal) and
+//! consumes delivered envelopes via
+//! [`handle_signal`](WebRtcTransport::handle_signal). Any out-of-band
+//! channel works —
 //! e.g. the WebSocket signaling server in `tpt-av-sync-server`.
 //!
 //! ICE candidates that arrive before the remote description is applied are
@@ -502,7 +504,10 @@ impl WrtcInner {
                 &mut *conn.pending_writes.lock().expect("writes lock"),
             );
             for bytes in pending {
-                let _ = channel.send(&::bytes::Bytes::from(bytes));
+                let channel = channel.clone();
+                let _ = self.rt_block_on(async move {
+                    channel.send(&::bytes::Bytes::from(bytes)).await
+                });
             }
         }
     }

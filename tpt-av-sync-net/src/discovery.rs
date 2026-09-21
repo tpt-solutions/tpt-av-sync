@@ -9,9 +9,13 @@
 //! - [`BroadcastDiscovery`] — beacons to the subnet broadcast address;
 //!   the fallback for networks where multicast is filtered.
 //!
-//! A full DNS-SD (mDNS) responder is deliberately deferred: the beacon
-//! carries the same information (peer id, name, session, connect port)
-//! with none of the protocol machinery. See DESIGN.md §"Deviations".
+//! A full mDNS/DNS-SD responder is also available under the `mdns`
+//! feature (`mdns_discovery::MdnsDiscovery`, implementing the same
+//! [`Discovery`] trait): the beacon here carries the same information
+//! (peer id, name, session, connect port) with none of the standard
+//! protocol's machinery, so use it unless interop with other,
+//! non-`tpt-av-sync` mDNS-aware tooling on the LAN specifically matters.
+//! See DESIGN.md §"Deviations".
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

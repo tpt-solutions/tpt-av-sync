@@ -28,18 +28,30 @@ jobs:
         run: cargo test --workspace
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Doc
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
 
   all-features:
-    name: build / test (all features, incl. WebRTC)
+    name: build / test / clippy / doc (all features, incl. WebRTC)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Build (all features)
         run: cargo build --workspace --all-features
       - name: Test (all features)
         run: cargo test --workspace --all-features
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - name: Doc (all features)
+        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
 
   deny:
     name: license audit (cargo-deny)

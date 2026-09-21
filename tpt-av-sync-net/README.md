@@ -16,6 +16,7 @@ Network transport and replication engine for [`tpt-av-sync`](https://github.com/
 | `batcher` | `OperationBatcher` — coalesce operations on a fixed interval (16 ms default). |
 | `offline` | `OfflineQueue` — bounded FIFO captured while disconnected, flushed on join. |
 | `discovery` | UDP multicast + broadcast LAN beacons with TTL expiry (`SO_REUSEADDR`-safe). |
+| `mdns_discovery` | `MdnsDiscovery` (feature `mdns`) — standard mDNS/DNS-SD responder implementing the same `Discovery` trait, for interop with non-`tpt-av-sync` mDNS tooling on the LAN. |
 | `peer` | `PeerRegistry` — join/leave/last-seen bookkeeping. |
 
 ## Choosing a transport

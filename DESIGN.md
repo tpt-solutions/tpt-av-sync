@@ -147,7 +147,7 @@ Owns a `TimelineCrdt` + `Box<dyn Transport>`. The app loop: `apply_local` for ed
 
 ### 5.3 Batching and discovery
 
-`OperationBatcher` coalesces operations on a fixed interval (16 ms default; failed flushes retain the batch). `MulticastDiscovery` / `BroadcastDiscovery` beacon a small UDP packet (peer id, name, session, connect port) with TTL-based expiry. A full DNS-SD mDNS responder is deferred (see §8); the beacon carries the same information without the protocol machinery.
+`OperationBatcher` coalesces operations on a fixed interval (16 ms default; failed flushes retain the batch). `MulticastDiscovery` / `BroadcastDiscovery` beacon a small UDP packet (peer id, name, session, connect port) with TTL-based expiry. A full mDNS/DNS-SD responder (`MdnsDiscovery`, feature `mdns`, built on the pure-Rust `mdns-sd` crate) is also available, implementing the same `Discovery` trait, for interop with non-`tpt-av-sync` mDNS tooling on the LAN — see §8.
 
 ## 6. Playhead synchronization (tpt-av-sync-playhead)
 
@@ -174,7 +174,7 @@ Deterministic precision tests (`tests/precision.rs`) simulate jittered networks 
 5. **Splits are split *points*, not per-op materialization**, with lazy inheritance from the parent chain — this is what makes spec §5.1's "concurrent splits → 3 clips" hold under arbitrary delivery order (the naive per-op copy does not).
 6. **Deletes require their target** and buffer when it is missing (the spec's "delete unknown = no-op" is not order-independent; see §4.3).
 7. **`SyncMessage::Batch` added** for the spec's §7.1 batching; `Ack(OperationId)` unchanged.
-8. **Discovery uses a custom UDP beacon** (multicast + broadcast) instead of full mDNS/DNS-SD; same LAN function, far less machinery, no external dependencies. A DNS-SD responder can be layered later.
+8. **Discovery uses a custom UDP beacon** (multicast + broadcast) as the *default* instead of full mDNS/DNS-SD; same LAN function, far less machinery, no external dependency by default. A standard mDNS/DNS-SD responder is available as an opt-in (`mdns` feature, `MdnsDiscovery`) for interop with other mDNS-aware tooling on the LAN — see §11.
 9. **Session metadata fields extended** (tempo, time signature) beyond name/sample-rate.
 10. **WebRTC e2e integration test is `#[ignore]`** by default: ICE between host candidates requires unrestricted local UDP, which CI sandboxes and some host firewalls block. Run with `cargo test --features webrtc -- --ignored` on a permissive network. Signaling, channel registration, and framing are exercised by unit tests and the relay path.
 
@@ -202,5 +202,5 @@ Deployment still owns key distribution, room-token distribution, and network top
 
 - [x] Snapshot compaction / operation GC (bounded memory for week-scale sessions): `tpt_av_sync_crdt::compaction::compact` / `TimelineCrdt::compact()` drop operations no longer needed to reconstruct current state, found by exact `OperationId` lookup against each field's current LWW tag (no per-operation-kind logic needed for the common case). Splits are deliberately never compacted — see the module doc for why — so this bounds the dominant source of log growth (routine moves/trims/renames) without touching the trickiest, tag-agnostic part of the CRDT. Covered by a property test (`compaction_never_changes_materialized_state`, 256 randomized cases) plus targeted tests for tombstones and splits.
 - [~] Vector-clock concurrency surfacing in the public API: `TimelineCrdt::take_resolution_events()` now reports genuine (vector-clock checked) concurrency for the three documented conflict classes — move, delete, split (`tpt-av-sync-crdt/src/merge.rs`, `ResolutionEvent`). Not yet generalized to every field (e.g. concurrent metadata-field writes aren't reported).
-- [ ] mDNS/DNS-SD responder option.
+- [x] mDNS/DNS-SD responder option: `tpt_av_sync_net::mdns_discovery::MdnsDiscovery` (feature `mdns`, built on the pure-Rust `mdns-sd` crate), implementing the same `Discovery` trait as the default UDP-beacon discoveries. Peer identity/session travel in the service's TXT record. Since the mDNS daemon runs its own background thread that outlives a dropped handle, `Discovery::stop`/`Drop` explicitly unregister and shut it down.
 - [ ] Long-run soak: 24 h simulated multi-peer session in CI.
