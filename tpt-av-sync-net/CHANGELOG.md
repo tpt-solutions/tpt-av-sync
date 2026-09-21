@@ -26,3 +26,4 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · SemVer.
 
 ### Verified
 - 19 unit tests; integration tests over real sockets: TCP two-peer exchange, snapshot bootstrap, offline-reconnect flush, three-peer mesh convergence, WebSocket exchange, multicast discovery, mDNS discovery; engine event pass-through suite.
+- `tests/soak.rs`: a 24-simulated-hour, 5-peer session (deterministic PRNG, ~7,000 operations, presence aging, hourly `TimelineCrdt::compact()`, staged convergence checks) in ~0.2s of wall-clock time.
