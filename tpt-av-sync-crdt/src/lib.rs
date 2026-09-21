@@ -43,6 +43,7 @@
 #![deny(missing_docs)]
 
 pub mod clip_crdt;
+pub mod compaction;
 pub mod delta;
 pub mod envelope_crdt;
 pub mod history;
@@ -54,6 +55,7 @@ pub mod timeline_crdt;
 pub mod track_crdt;
 
 pub use clip_crdt::{ClipCrdt, ClipParent};
+pub use compaction::compact;
 pub use delta::{apply_delta, compute_delta};
 pub use envelope_crdt::EnvelopeStore;
 pub use history::{compute_inverse, History, HistoryEntry};

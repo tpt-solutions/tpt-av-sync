@@ -44,6 +44,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Peer authentication: `tpt_av_sync_utils::identity::PeerIdentity` (Ed25519; `PeerId` derived from the public key), hello + liveness challenge/response handshake, `PROTOCOL_VERSION` bumped to 2 and enforced.
 - Room authorization: keyed-hash `room_token_proof` (the passphrase itself never crosses the wire), a `Join` first frame binding peer identity server-side in `relay.rs`/`signaling.rs` — client-supplied `from` is no longer trusted on later frames — with an explicit `RoomAuth::Open` opt-out for LAN/trusted use.
 
+### Added — Path to 1.0
+- `tpt_av_sync_crdt::compaction::compact` / `TimelineCrdt::compact()`: drops operations no longer needed to reconstruct current session state (found via exact `OperationId` lookup against each field's current LWW tag), bounding operation-log growth for long-running sessions. Splits are deliberately exempt (see the module doc). Covered by a 256-case property test plus targeted tombstone/split tests.
+
 ### Added — Phase 8 (innovative features)
 - `tpt_av_sync_crdt::replay`: `SessionRecording` replays a recorded operation log through `TimelineCrdt::apply_remote`, instantly, at a scaled real-time pace, or only up to a target timestamp.
 - `tpt_av_sync_crdt::merge`: `ResolutionEvent` + `TimelineCrdt::take_resolution_events()` — a conflict/merge visualizer reporting which write won a *genuinely concurrent* (vector-clock checked, not just "different peer") move/delete/split, and why. `examples/merge_visualizer` demonstrates all three conflict kinds side by side.

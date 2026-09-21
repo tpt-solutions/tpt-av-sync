@@ -221,4 +221,33 @@ proptest! {
         merger.merge_snapshot(&origin.snapshot());
         prop_assert_eq!(origin.view(), merger.view());
     }
+
+    /// Compaction: for arbitrary operation streams (any mix of
+    /// inserts/moves/deletes/splits/trims/metadata/envelope/session-meta
+    /// edits), compacting must never change materialized state, and a
+    /// fresh replica built only from the compacted log must converge to
+    /// the same state as one built from the full history.
+    #[test]
+    fn compaction_never_changes_materialized_state(
+        ops in proptest::collection::vec(arb_op(), 0..80),
+    ) {
+        let mut origin = TimelineCrdt::new(PeerId::from_u64(1));
+        for op in tag_ops(&ops) {
+            origin.apply_remote(op).unwrap();
+        }
+        let before = origin.view();
+
+        let compacted_ops = tpt_av_sync_crdt::compact(origin.operation_log(), origin.session());
+        prop_assert!(compacted_ops.len() <= origin.operation_log().len());
+
+        let mut rebuilt = TimelineCrdt::new(PeerId::from_u64(2));
+        for op in compacted_ops {
+            rebuilt.apply_remote(op).unwrap();
+        }
+        prop_assert_eq!(rebuilt.view(), before.clone());
+
+        // compact() itself (in place) must agree with the free function.
+        origin.compact();
+        prop_assert_eq!(origin.view(), before);
+    }
 }

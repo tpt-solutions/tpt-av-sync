@@ -185,6 +185,25 @@ impl TimelineCrdt {
         std::mem::take(&mut self.resolution_events)
     }
 
+    /// Compacts the operation log in place: drops operations that no
+    /// longer contribute to the current session state (see
+    /// `crate::compaction`). Materialized state (`view()`) is unchanged; a
+    /// fresh replica built by replaying the compacted log converges to the
+    /// exact same state a full replay would have produced.
+    ///
+    /// This also shrinks the idempotency-tracking set to match, so a very
+    /// late duplicate of an operation this call just dropped will be
+    /// reprocessed rather than short-circuited — harmless (CRDT operations
+    /// are idempotent by construction) but not free, so don't compact on
+    /// every operation; call it periodically (e.g. session checkpoints, or
+    /// every N operations) on a session old enough that such duplicates
+    /// are no longer in flight.
+    pub fn compact(&mut self) {
+        let compacted = crate::compaction::compact(&self.operation_log, &self.session);
+        self.seen = compacted.iter().map(|op| op.op_id).collect();
+        self.operation_log = compacted;
+    }
+
     /// Generates a snapshot of the current state (for new peers joining).
     #[must_use]
     pub fn snapshot(&self) -> TimelineSnapshot {

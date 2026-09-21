@@ -181,7 +181,7 @@ Deterministic precision tests (`tests/precision.rs`) simulate jittered networks 
 ## 9. Performance notes
 
 - CRDT apply is O(log n) per op (BTreeMap registers); convergence work is bounded by delivered ops, not by re-merge sweeps.
-- Snapshot size is O(operations), which grows unboundedly over very long sessions — the planned compaction (GC of superseded ops below the vector-clock floor) is the main pre-1.0 performance item.
+- Snapshot size is O(operations) by default; `TimelineCrdt::compact()` (§11) drops operations no longer needed to reconstruct current state, bounding this for the dominant case (routine edits) — call it periodically on long-running sessions. Splits are exempt from compaction and remain O(splits ever performed).
 - Playhead hot path: ~arithmetic-only (see benches). Target: comfortably under 100 ns per call on x86-64.
 - Message path: bincode; batcher amortizes per-message overhead to ~1 frame at 60 fps edit streams.
 
@@ -200,7 +200,7 @@ Deployment still owns key distribution, room-token distribution, and network top
 
 ## 11. Path to 1.0
 
-- [ ] Snapshot compaction / operation GC (bounded memory for week-scale sessions).
+- [x] Snapshot compaction / operation GC (bounded memory for week-scale sessions): `tpt_av_sync_crdt::compaction::compact` / `TimelineCrdt::compact()` drop operations no longer needed to reconstruct current state, found by exact `OperationId` lookup against each field's current LWW tag (no per-operation-kind logic needed for the common case). Splits are deliberately never compacted — see the module doc for why — so this bounds the dominant source of log growth (routine moves/trims/renames) without touching the trickiest, tag-agnostic part of the CRDT. Covered by a property test (`compaction_never_changes_materialized_state`, 256 randomized cases) plus targeted tests for tombstones and splits.
 - [~] Vector-clock concurrency surfacing in the public API: `TimelineCrdt::take_resolution_events()` now reports genuine (vector-clock checked) concurrency for the three documented conflict classes — move, delete, split (`tpt-av-sync-crdt/src/merge.rs`, `ResolutionEvent`). Not yet generalized to every field (e.g. concurrent metadata-field writes aren't reported).
 - [ ] mDNS/DNS-SD responder option.
 - [ ] Long-run soak: 24 h simulated multi-peer session in CI.

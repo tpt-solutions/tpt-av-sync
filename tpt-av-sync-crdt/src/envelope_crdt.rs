@@ -55,6 +55,12 @@ impl EnvelopeStore {
         self.envelopes.iter().map(|((t, e), reg)| (t, e, reg.get().as_slice()))
     }
 
+    /// The LWW tag of each stored envelope's last write (for compaction:
+    /// see `crate::compaction`).
+    pub fn tags(&self) -> impl Iterator<Item = OpTag> + '_ {
+        self.envelopes.values().map(LwwReg::tag)
+    }
+
     /// Number of stored envelopes.
     #[must_use]
     pub fn len(&self) -> usize {

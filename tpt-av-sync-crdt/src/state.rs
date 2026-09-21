@@ -290,6 +290,21 @@ impl Session {
         &self.envelopes
     }
 
+    /// The LWW tags of the five session-metadata registers (name,
+    /// sample_rate, tempo_bpm, ts_numerator, ts_denominator), for
+    /// compaction (see `crate::compaction`). Order is not meaningful to
+    /// callers — only the set of tags is.
+    #[must_use]
+    pub fn session_metadata_tags(&self) -> [crate::merge::OpTag; 5] {
+        [
+            self.metadata.name.tag(),
+            self.metadata.sample_rate.tag(),
+            self.metadata.tempo_bpm.tag(),
+            self.metadata.ts_numerator.tag(),
+            self.metadata.ts_denominator.tag(),
+        ]
+    }
+
     /// Mutable access to the automation envelope store (used by delta
     /// application).
     pub fn envelopes_mut(&mut self) -> &mut EnvelopeStore {
