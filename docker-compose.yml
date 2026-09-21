@@ -1,0 +1,27 @@
+# Runs a relay (persisted op-logs) and a signaling server together, both
+# built from the same image (see Dockerfile).
+#
+#   docker compose up --build
+#
+# Relay:     ws://localhost:7000
+# Signaling: ws://localhost:7001
+
+services:
+  relay:
+    build: .
+    command: ["relay", "0.0.0.0:7000", "/data"]
+    ports:
+      - "7000:7000"
+    volumes:
+      - tpt-av-sync-data:/data
+    restart: unless-stopped
+
+  signaling:
+    build: .
+    command: ["signaling", "0.0.0.0:7001"]
+    ports:
+      - "7001:7001"
+    restart: unless-stopped
+
+volumes:
+  tpt-av-sync-data:

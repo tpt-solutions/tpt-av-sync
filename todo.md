@@ -231,4 +231,4 @@ Findings from a security recon pass: no transport encryption on TCP/WebSocket (p
 
 - [ ] `cargo-generate` project template wiring `tpt-av-sync-{utils,crdt,net,playhead,presence}` with a minimal working `SyncEngine` setup
 - [x] New `tpt-av-sync-cli` binary crate: `inspect`/`replay`/`dashboard`/`relay` subcommands — inspect/replay/dump a `SessionStore` op-log; run a local relay server for testing (reuses `RelayServer` directly)
-- [ ] `Dockerfile` + `docker-compose.yml` for `tpt-av-sync-server` (relay/signaling ports + persistent volume for op-logs)
+- [x] `Dockerfile` + `docker-compose.yml` for `tpt-av-sync-server` (relay/signaling ports + persistent volume for op-logs) — via `tpt-av-sync-cli`'s `relay`/`signaling` subcommands
