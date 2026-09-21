@@ -223,12 +223,12 @@ Findings from a security recon pass: no transport encryption on TCP/WebSocket (p
 
 - [x] Session recording & replay: `tpt-av-sync-crdt/src/replay.rs` — `SessionRecording` wraps a recorded `Vec<TaggedOperation>` (from `operation_log()` or a `SessionStore`), replays via `TimelineCrdt::apply_remote` at `ReplaySpeed::Instant` or `Realtime(factor)`, and supports `replay_until(cutoff)` for a target timestamp
 - [x] Conflict/merge visualizer: `merge.rs` — `ResolutionEvent` + `resolve_tag_conflict`; `TimelineCrdt::take_resolution_events()` detects *genuine* concurrency (vector-clock based, not just "different peer") for move/delete/split and reports the winner and why; surfaced in the new `examples/merge_visualizer.rs`
-- [ ] Live session inspector/dashboard (TUI via `ratatui`): connected peers, presence state, playhead positions, op throughput — hook into `SyncEngine::process_messages`
+- [x] Live session inspector/dashboard (TUI via `ratatui`): connected peers, presence state, playhead positions, op throughput — `tpt-av-sync-cli dashboard <bind-addr> [peer-addr]`, hooked into `SyncEngine::process_messages`/`take_events`
 
 ---
 
 ## Phase 9 — Adoption Tooling
 
 - [ ] `cargo-generate` project template wiring `tpt-av-sync-{utils,crdt,net,playhead,presence}` with a minimal working `SyncEngine` setup
-- [ ] New `tpt-av-sync-cli` binary crate: inspect/replay/dump a `SessionStore` op-log; run a local relay server for testing (reuse `RelayServer` directly)
+- [x] New `tpt-av-sync-cli` binary crate: `inspect`/`replay`/`dashboard`/`relay` subcommands — inspect/replay/dump a `SessionStore` op-log; run a local relay server for testing (reuses `RelayServer` directly)
 - [ ] `Dockerfile` + `docker-compose.yml` for `tpt-av-sync-server` (relay/signaling ports + persistent volume for op-logs)

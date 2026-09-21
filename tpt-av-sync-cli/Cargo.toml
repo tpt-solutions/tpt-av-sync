@@ -1,0 +1,27 @@
+[package]
+name = "tpt-av-sync-cli"
+description = "Command-line tooling for tpt-av-sync: inspect and replay a persisted session store, run a local relay for testing, and a live session dashboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "tpt-av-sync"
+path = "src/main.rs"
+
+[dependencies]
+tpt-av-sync-utils = { workspace = true }
+tpt-av-sync-crdt = { workspace = true }
+tpt-av-sync-net = { workspace = true }
+tpt-av-sync-presence = { workspace = true }
+tpt-av-sync-playhead = { workspace = true }
+tpt-av-sync-server = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
+[lints]
+workspace = true

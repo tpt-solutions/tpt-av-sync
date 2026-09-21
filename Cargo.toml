@@ -7,6 +7,7 @@ members = [
     "tpt-av-sync-playhead",
     "tpt-av-sync-presence",
     "tpt-av-sync-server",
+    "tpt-av-sync-cli",
     "examples",
 ]
 
@@ -25,6 +26,7 @@ tpt-av-sync-crdt = { path = "tpt-av-sync-crdt", version = "0.1.0" }
 tpt-av-sync-net = { path = "tpt-av-sync-net", version = "0.1.0" }
 tpt-av-sync-playhead = { path = "tpt-av-sync-playhead", version = "0.1.0" }
 tpt-av-sync-presence = { path = "tpt-av-sync-presence", version = "0.1.0" }
+tpt-av-sync-server = { path = "tpt-av-sync-server", version = "0.1.0" }
 
 # Networking (permissive-licensed only — see deny.toml).
 tokio = { version = "1.37", features = ["full"] }
@@ -50,6 +52,10 @@ bincode = { version = "2.0", features = ["serde"] }
 
 # Misc.
 log = "0.4"
+
+# CLI tooling (Phase 9).
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
 
 # Dev / test.
 proptest = "1.4"
