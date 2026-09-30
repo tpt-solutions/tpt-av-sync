@@ -7,3 +7,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+# tpt-weave working state
+/.tpt-weave/
